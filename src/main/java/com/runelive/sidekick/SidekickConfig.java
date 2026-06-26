@@ -1,5 +1,6 @@
 package com.runelive.sidekick;
 
+import com.runelive.sidekick.llm.LlmProvider;
 import lombok.Builder;
 import lombok.Value;
 import okhttp3.HttpUrl;
@@ -14,9 +15,17 @@ import okhttp3.HttpUrl;
 @Builder(toBuilder = true)
 public class SidekickConfig
 {
+	@Builder.Default
+	LlmProvider provider = LlmProvider.ANTHROPIC;
+
 	String anthropicApiKey;
 	@Builder.Default
 	HttpUrl anthropicBaseUrl = HttpUrl.get("https://api.anthropic.com");
+
+	String geminiApiKey;
+	@Builder.Default
+	HttpUrl geminiBaseUrl = HttpUrl.get("https://generativelanguage.googleapis.com");
+
 	@Builder.Default
 	String model = "claude-opus-4-8";
 	@Builder.Default
@@ -42,9 +51,14 @@ public class SidekickConfig
 
 	public static SidekickConfig fromEnvironment()
 	{
+		LlmProvider provider = LlmProvider.fromString(env("SIDEKICK_PROVIDER", "anthropic"));
+		String defaultModel = provider == LlmProvider.GEMINI ? "gemini-3.5-flash" : "claude-opus-4-8";
+
 		SidekickConfigBuilder builder = SidekickConfig.builder()
+			.provider(provider)
 			.anthropicApiKey(env("ANTHROPIC_API_KEY", null))
-			.model(env("SIDEKICK_MODEL", "claude-opus-4-8"))
+			.geminiApiKey(env("GEMINI_API_KEY", env("GOOGLE_API_KEY", null)))
+			.model(env("SIDEKICK_MODEL", defaultModel))
 			.defaultPlayer(env("SIDEKICK_PLAYER", null))
 			.port(parseInt(env("SIDEKICK_PORT", "8080"), 8080))
 			.thinking(!"false".equalsIgnoreCase(env("SIDEKICK_THINKING", "true")));
@@ -53,6 +67,11 @@ public class SidekickConfig
 		if (anthropicBase != null)
 		{
 			builder.anthropicBaseUrl(HttpUrl.get(anthropicBase));
+		}
+		String geminiBase = env("SIDEKICK_GEMINI_BASE_URL", null);
+		if (geminiBase != null)
+		{
+			builder.geminiBaseUrl(HttpUrl.get(geminiBase));
 		}
 		String womBase = env("SIDEKICK_WOM_BASE_URL", null);
 		if (womBase != null)

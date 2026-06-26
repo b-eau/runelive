@@ -18,6 +18,9 @@ import com.runelive.sidekick.context.wiki.WikiResult;
 import com.runelive.sidekick.context.wiseoldman.WiseOldManClient;
 import com.runelive.sidekick.http.HttpJson;
 import com.runelive.sidekick.llm.AnthropicClient;
+import com.runelive.sidekick.llm.GeminiClient;
+import com.runelive.sidekick.llm.LlmClient;
+import com.runelive.sidekick.llm.LlmProvider;
 import com.runelive.sidekick.web.ChatService;
 import com.runelive.sidekick.web.WebServer;
 import java.io.IOException;
@@ -102,17 +105,8 @@ public class Sidekick implements AutoCloseable
 			new RateLimiter(5, 1, Duration.ofSeconds(2), clock),
 			new TtlCache<String, WikiResult>(WIKI_TTL, clock));
 
-		// The brain.
-		AnthropicClient llm = AnthropicClient.builder()
-			.http(http)
-			.gson(gson)
-			.baseUrl(config.getAnthropicBaseUrl())
-			.apiKey(config.getAnthropicApiKey())
-			.model(config.getModel())
-			.maxTokens(config.getMaxTokens())
-			.thinking(config.isThinking())
-			.userAgent(config.getUserAgent())
-			.build();
+		// The brain — provider chosen by config; both speak the same LlmClient interface.
+		LlmClient llm = buildLlmClient(config, http, gson);
 
 		List<AgentTool> tools = List.of(
 			new GrandExchangePriceTool(priceClient),
@@ -123,6 +117,31 @@ public class Sidekick implements AutoCloseable
 		this.chatService = new ChatService(playerContextSource, agentService, config.getDefaultPlayer());
 		this.webServer = new WebServer(
 			config.getPort(), executor, gson, chatService, config.getModel(), config.getDefaultPlayer());
+	}
+
+	private static LlmClient buildLlmClient(SidekickConfig config, OkHttpClient http, Gson gson)
+	{
+		if (config.getProvider() == LlmProvider.GEMINI)
+		{
+			return GeminiClient.builder()
+				.http(http)
+				.gson(gson)
+				.baseUrl(config.getGeminiBaseUrl())
+				.apiKey(config.getGeminiApiKey())
+				.model(config.getModel())
+				.maxTokens(config.getMaxTokens())
+				.build();
+		}
+		return AnthropicClient.builder()
+			.http(http)
+			.gson(gson)
+			.baseUrl(config.getAnthropicBaseUrl())
+			.apiKey(config.getAnthropicApiKey())
+			.model(config.getModel())
+			.maxTokens(config.getMaxTokens())
+			.thinking(config.isThinking())
+			.userAgent(config.getUserAgent())
+			.build();
 	}
 
 	public void start() throws IOException

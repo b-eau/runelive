@@ -1,6 +1,5 @@
 package com.runelive.sidekick.testutil;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.runelive.sidekick.llm.LlmClient;
 import com.runelive.sidekick.llm.LlmRequest;
@@ -33,18 +32,11 @@ public final class FakeLlmClient implements LlmClient
 
 	public static LlmResult endTurn(String text)
 	{
-		return new LlmResult(StopReason.END_TURN, text, List.of(), new JsonArray(), 0, 0);
+		return new LlmResult(StopReason.END_TURN, text, List.of(), 0, 0);
 	}
 
 	public static LlmResult toolUse(String id, String name, JsonObject input)
 	{
-		JsonArray content = new JsonArray();
-		JsonObject block = new JsonObject();
-		block.addProperty("type", "tool_use");
-		block.addProperty("id", id);
-		block.addProperty("name", name);
-		block.add("input", input);
-		content.add(block);
-		return new LlmResult(StopReason.TOOL_USE, "", List.of(new ToolCall(id, name, input)), content, 0, 0);
+		return new LlmResult(StopReason.TOOL_USE, "", List.of(new ToolCall(id, name, input, null)), 0, 0);
 	}
 }

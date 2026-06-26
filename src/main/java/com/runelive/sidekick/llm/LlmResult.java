@@ -1,20 +1,17 @@
 package com.runelive.sidekick.llm;
 
-import com.google.gson.JsonElement;
 import java.util.List;
 import lombok.Value;
 
-/** The model's response to an {@link LlmRequest}. */
+/** The model's response to an {@link LlmRequest}, in provider-neutral form. */
 @Value
 public class LlmResult
 {
 	StopReason stopReason;
-	/** Concatenated text blocks (may be empty when the model only requested tools or refused). */
+	/** Concatenated text the model produced (may be empty when it only requested tools or refused). */
 	String text;
 	/** Tool calls the model wants executed before continuing. */
 	List<ToolCall> toolCalls;
-	/** The raw assistant content block array, replayed verbatim on the next request. */
-	JsonElement assistantContent;
 	int inputTokens;
 	int outputTokens;
 

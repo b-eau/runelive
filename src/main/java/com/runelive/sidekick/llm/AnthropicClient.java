@@ -20,12 +20,12 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 /**
- * {@link LlmClient} implementation calling the Anthropic Messages API over raw HTTP (OkHttp + Gson).
+ * {@link LlmClient} for the Anthropic Messages API, over raw HTTP (OkHttp + Gson).
  *
- * <p>Why raw HTTP rather than the official {@code anthropic-java} SDK: this code is destined to move
- * into a RuneLite hub plugin, which must reuse the injected {@code OkHttpClient}/{@code Gson} and
- * cannot pull in the SDK's heavier dependency tree. Building the small slice of the Messages API we
- * use directly keeps the agent core portable and makes the wire format trivial to mock in tests.
+ * <p>Raw HTTP rather than the official SDK keeps the agent core portable into a RuneLite hub plugin
+ * (which reuses the injected {@code OkHttpClient}/{@code Gson} and avoids the SDK's dependency tree)
+ * and makes the wire format trivial to mock. The neutral {@link ContentPart} model is translated
+ * to Anthropic content blocks here.
  */
 @Slf4j
 public class AnthropicClient implements LlmClient
@@ -68,7 +68,7 @@ public class AnthropicClient implements LlmClient
 	{
 		if (apiKey == null || apiKey.trim().isEmpty())
 		{
-			throw new LlmException(401, "ANTHROPIC_API_KEY is not set — the sidekick needs an Anthropic API key to think.");
+			throw new LlmException(401, "Anthropic API key is not set.");
 		}
 
 		JsonObject body = buildBody(request);
@@ -113,8 +113,8 @@ public class AnthropicClient implements LlmClient
 		for (LlmMessage message : request.getMessages())
 		{
 			JsonObject obj = new JsonObject();
-			obj.addProperty("role", message.getRole());
-			obj.add("content", message.getContent());
+			obj.addProperty("role", message.getRole() == Role.ASSISTANT ? "assistant" : "user");
+			obj.add("content", toContentBlocks(message));
 			messages.add(obj);
 		}
 		body.add("messages", messages);
@@ -135,14 +135,51 @@ public class AnthropicClient implements LlmClient
 
 		if (thinking)
 		{
-			// Adaptive thinking is the recommended mode on Opus 4.8; thinking/tool_use blocks come
-			// back in the content array and are replayed verbatim by the agent loop.
 			JsonObject thinkingConfig = new JsonObject();
 			thinkingConfig.addProperty("type", "adaptive");
 			body.add("thinking", thinkingConfig);
 		}
 
 		return body;
+	}
+
+	private JsonArray toContentBlocks(LlmMessage message)
+	{
+		JsonArray blocks = new JsonArray();
+		for (ContentPart part : message.getParts())
+		{
+			if (part instanceof TextPart)
+			{
+				JsonObject block = new JsonObject();
+				block.addProperty("type", "text");
+				block.addProperty("text", ((TextPart) part).getText());
+				blocks.add(block);
+			}
+			else if (part instanceof ToolUsePart)
+			{
+				ToolUsePart tool = (ToolUsePart) part;
+				JsonObject block = new JsonObject();
+				block.addProperty("type", "tool_use");
+				block.addProperty("id", tool.getId());
+				block.addProperty("name", tool.getName());
+				block.add("input", tool.getInput());
+				blocks.add(block);
+			}
+			else if (part instanceof ToolResultPart)
+			{
+				ToolResultPart result = (ToolResultPart) part;
+				JsonObject block = new JsonObject();
+				block.addProperty("type", "tool_result");
+				block.addProperty("tool_use_id", result.getToolUseId());
+				block.addProperty("content", result.getContent());
+				if (result.isError())
+				{
+					block.addProperty("is_error", true);
+				}
+				blocks.add(block);
+			}
+		}
+		return blocks;
 	}
 
 	private LlmResult parse(String responseBody)
@@ -188,7 +225,8 @@ public class AnthropicClient implements LlmClient
 				toolCalls.add(new ToolCall(
 					Json.optString(block, "id", ""),
 					Json.optString(block, "name", ""),
-					input));
+					input,
+					null));
 			}
 		}
 
@@ -197,7 +235,7 @@ public class AnthropicClient implements LlmClient
 		int inputTokens = usage == null ? 0 : Json.optInt(usage, "input_tokens", 0);
 		int outputTokens = usage == null ? 0 : Json.optInt(usage, "output_tokens", 0);
 
-		return new LlmResult(stopReason, text.toString().trim(), toolCalls, content, inputTokens, outputTokens);
+		return new LlmResult(stopReason, text.toString().trim(), toolCalls, inputTokens, outputTokens);
 	}
 
 	private static String truncate(String body)

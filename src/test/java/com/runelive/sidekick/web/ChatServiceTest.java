@@ -10,6 +10,7 @@ import com.runelive.sidekick.agent.ToolRegistry;
 import com.runelive.sidekick.context.PlayerContext;
 import com.runelive.sidekick.context.PlayerContextSource;
 import com.runelive.sidekick.context.PlayerNotFoundException;
+import com.runelive.sidekick.llm.Role;
 import com.runelive.sidekick.testutil.FakeLlmClient;
 import java.util.List;
 import java.util.Map;
@@ -121,6 +122,6 @@ public class ChatServiceTest
 			new ChatDtos.Turn("user", "second")));
 
 		assertEquals(3, llm.requests.get(0).getMessages().size());
-		assertEquals("assistant", llm.requests.get(0).getMessages().get(1).getRole());
+		assertEquals(Role.ASSISTANT, llm.requests.get(0).getMessages().get(1).getRole());
 	}
 }

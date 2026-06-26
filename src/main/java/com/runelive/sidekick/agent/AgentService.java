@@ -2,15 +2,18 @@ package com.runelive.sidekick.agent;
 
 import com.runelive.sidekick.agent.tools.AgentTool;
 import com.runelive.sidekick.context.PlayerContext;
+import com.runelive.sidekick.llm.ContentPart;
 import com.runelive.sidekick.llm.LlmClient;
 import com.runelive.sidekick.llm.LlmMessage;
 import com.runelive.sidekick.llm.LlmRequest;
 import com.runelive.sidekick.llm.LlmResult;
 import com.runelive.sidekick.llm.Modality;
 import com.runelive.sidekick.llm.StopReason;
+import com.runelive.sidekick.llm.TextPart;
 import com.runelive.sidekick.llm.ToolCall;
 import com.runelive.sidekick.llm.ToolResult;
 import com.runelive.sidekick.llm.ToolSpec;
+import com.runelive.sidekick.llm.ToolUsePart;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.extern.slf4j.Slf4j;
@@ -58,15 +61,25 @@ public class AgentService
 
 			if (result.wantsTools())
 			{
-				// Replay the assistant's blocks verbatim (preserves thinking + tool_use), then answer
-				// every tool call in a single user turn of tool_result blocks.
-				messages.add(LlmMessage.assistant(result.getAssistantContent()));
+				// Reconstruct the assistant turn (text + tool calls) in provider-neutral form,
+				// preserving any opaque signature, then answer every call in one tool-result turn.
+				List<ContentPart> assistantParts = new ArrayList<>();
+				if (!result.getText().isEmpty())
+				{
+					assistantParts.add(new TextPart(result.getText()));
+				}
+				for (ToolCall call : result.getToolCalls())
+				{
+					assistantParts.add(new ToolUsePart(call.getId(), call.getName(), call.getInput(), call.getSignature()));
+				}
+				messages.add(LlmMessage.assistant(assistantParts));
+
 				List<ToolResult> toolResults = new ArrayList<>();
 				for (ToolCall call : result.getToolCalls())
 				{
 					ToolOutcome outcome = runTool(call);
 					invocations.add(new ToolInvocation(call.getName(), call.getInput().toString(), outcome.output, outcome.error));
-					toolResults.add(new ToolResult(call.getId(), outcome.output, outcome.error));
+					toolResults.add(new ToolResult(call.getId(), call.getName(), outcome.output, outcome.error));
 				}
 				messages.add(LlmMessage.toolResults(toolResults));
 				continue;
