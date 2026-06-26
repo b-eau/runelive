@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>OSRS Sidekick</title>
+	<link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+	<header class="topbar">
+		<div class="brand">
+			<span class="brand-mark">⚔️</span>
+			<div>
+				<div class="brand-title">OSRS Sidekick</div>
+				<div class="brand-sub">your genius RuneScape buddy</div>
+			</div>
+		</div>
+		<div class="account" id="account" hidden>
+			<span class="account-name" id="accountName"></span>
+			<span class="account-meta" id="accountMeta"></span>
+		</div>
+	</header>
+
+	<section class="setup" id="setup">
+		<label for="player">Your OSRS username</label>
+		<div class="setup-row">
+			<input id="player" type="text" placeholder="e.g. Zezima" autocomplete="off" />
+			<div class="modality" role="group" aria-label="Conversation mode">
+				<button class="mode-btn active" data-mode="text" id="modeText">Text</button>
+				<button class="mode-btn" data-mode="voice" id="modeVoice">Voice</button>
+			</div>
+		</div>
+		<p class="hint" id="setupHint">Enter your username, pick a mode, then start chatting. Your name is sent to the OSRS community hiscore APIs to personalise advice.</p>
+	</section>
+
+	<main class="chat" id="chat" aria-live="polite"></main>
+
+	<footer class="composer">
+		<button class="mic" id="mic" title="Hold to talk" aria-label="Voice input" hidden>🎤</button>
+		<textarea id="input" rows="1" placeholder="Ask anything — quests, gear, money-making, what to do next…"></textarea>
+		<button class="send" id="send">Send</button>
+	</footer>
+
+	<div class="speaking-bar" id="speakingBar" hidden>
+		<span>🔊 Speaking…</span>
+		<button id="stopSpeaking">Stop</button>
+	</div>
+
+	<script src="/app.js"></script>
+</body>
+</html>
