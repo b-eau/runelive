@@ -21,16 +21,29 @@ This repository is the **first stage**: before integrating with the live RuneLit
   - **Voice mode** — speech-to-text in, replies spoken aloud (Web Speech API), and the prompt is re-tuned for the ear: short, conversational, no markdown/URLs, numbers spoken naturally.
 - **Good API citizenship** — every upstream call is rate-limited (token bucket) and cached (per-RSN / per-item / per-query) so a chatty conversation never bursts the community services.
 
-The model is Anthropic **Claude Opus 4.8** (`claude-opus-4-8`), called over raw HTTP using OkHttp + Gson (see *Design notes*).
+### Pluggable LLM providers
+
+The chat model sits behind a single `LlmClient` seam and a provider-neutral message model, so adding a backend is just a new `LlmClient` implementation plus an `LlmProvider` enum value — nothing else changes. Two providers ship today:
+
+- **Anthropic** (`claude-opus-4-8` by default) — Messages API.
+- **Google Gemini** (`gemini-3.5-flash` by default; `gemini-3.1-flash-lite` for cheap smoke tests) — `generateContent`, including function calling and Gemini 3 thought-signature round-tripping.
+
+Both are called over raw HTTP (OkHttp + Gson) so the agent core stays portable into a RuneLite plugin (see *Design notes*). Select with `SIDEKICK_PROVIDER`.
 
 ---
 
 ## Running it
 
-Requirements: JDK 11+ (the build targets Java 11 bytecode), and an Anthropic API key.
+Requirements: JDK 11+ (the build targets Java 11 bytecode), and an API key for your chosen provider.
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...      # required
+# Anthropic (default provider)
+export ANTHROPIC_API_KEY=sk-ant-...
+
+# …or Google Gemini
+export SIDEKICK_PROVIDER=gemini
+export GEMINI_API_KEY=AIza...
+
 export SIDEKICK_PLAYER="Your RSN"        # optional default username
 export SIDEKICK_PORT=8080                # optional (default 8080)
 ./gradlew run
@@ -42,12 +55,15 @@ Then open <http://localhost:8080>, enter your OSRS username, pick **Text** or **
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | — (required) | Anthropic API key |
-| `SIDEKICK_MODEL` | `claude-opus-4-8` | Model id |
+| `SIDEKICK_PROVIDER` | `anthropic` | `anthropic` or `gemini` |
+| `ANTHROPIC_API_KEY` | — | Anthropic key (required when provider is anthropic) |
+| `GEMINI_API_KEY` | — | Gemini key (required when provider is gemini; `GOOGLE_API_KEY` also accepted) |
+| `SIDEKICK_MODEL` | `claude-opus-4-8` / `gemini-3.5-flash` | Model id (default depends on provider) |
 | `SIDEKICK_PLAYER` | — | Default RSN if the UI leaves it blank |
 | `SIDEKICK_PORT` | `8080` | Web UI port |
-| `SIDEKICK_THINKING` | `true` | Adaptive thinking on/off |
+| `SIDEKICK_THINKING` | `true` | Adaptive thinking on/off (Anthropic) |
 | `SIDEKICK_ANTHROPIC_BASE_URL` | `https://api.anthropic.com` | Override (proxies/tests) |
+| `SIDEKICK_GEMINI_BASE_URL` | `https://generativelanguage.googleapis.com` | Override (proxies/tests) |
 | `SIDEKICK_WOM_BASE_URL` | `https://api.wiseoldman.net/v2` | Override |
 | `SIDEKICK_PRICES_BASE_URL` | `https://prices.runescape.wiki/api/v1/osrs` | Override |
 | `SIDEKICK_WIKI_BASE_URL` | `https://oldschool.runescape.wiki` | Override |
@@ -62,9 +78,15 @@ Then open <http://localhost:8080>, enter your OSRS username, pick **Text** or **
 ./gradlew test
 ```
 
-40 tests cover: the TTL cache (caching, expiry, single-flight, failure-not-cached) and token-bucket rate limiter with a controllable clock; each API client against a `MockWebServer` (parsing, not-found handling, and that caching/throttling actually de-duplicate calls); the Anthropic client's request building and response/tool-use parsing; the agentic tool loop (tool dispatch, replay of assistant blocks, error handling, step limit, voice-vs-text prompts); and a **full end-to-end test** that drives the running HTTP server through a complete tool-using turn with mocked Anthropic + community APIs.
+The 46 tests cover: the TTL cache (caching, expiry, single-flight, failure-not-cached) and token-bucket rate limiter with a controllable clock; each API client against a `MockWebServer` (parsing, not-found handling, and that caching/throttling actually de-duplicate calls); both LLM clients' request building and response parsing (Anthropic tool-use; Gemini function-calling incl. schema sanitization and thought-signature replay); the agentic tool loop (dispatch, neutral assistant-turn reconstruction, error handling, step limit, voice-vs-text prompts); and a **full end-to-end test** driving the running HTTP server through a complete tool-using turn with mocked LLM + community APIs.
 
-No test ever touches a live community API or spends Anthropic tokens — everything is mocked or faked.
+Normal `./gradlew test` never touches a live API or spends tokens — everything is mocked or faked. A separate live test against real Gemini + real community APIs is gated behind `GEMINI_API_KEY` (skipped otherwise):
+
+```bash
+export GEMINI_API_KEY=AIza...
+export SIDEKICK_MODEL=gemini-3.1-flash-lite   # or gemini-3.5-flash for high fidelity
+./gradlew test --tests 'com.runelive.sidekick.GeminiLiveIntegrationTest' --rerun
+```
 
 ---
 
@@ -80,7 +102,7 @@ com.runelive.sidekick
 │   ├── wiseoldman/   WiseOldManClient  → PlayerContext
 │   ├── prices/       PriceClient       → GE prices
 │   └── wiki/         WikiClient        → article summaries
-├── llm/              LlmClient (interface) + AnthropicClient (Messages API) + message/result types
+├── llm/              LlmClient (interface) + AnthropicClient + GeminiClient + neutral content model
 ├── agent/            AgentService (tool loop) + SystemPrompts (modality-tuned) + tools/
 ├── web/              ChatService + WebServer (embedded JDK HTTP server) + DTOs   ← platform glue
 └── Sidekick / SidekickApp   composition root + entry point
@@ -100,6 +122,7 @@ The split above is deliberate. To restructure into a plugin:
 
 ### Design notes
 
-- **Raw HTTP for Anthropic (not the official SDK).** The agent core is destined for a RuneLite hub plugin, which must reuse the injected `OkHttpClient`/`Gson` and avoid heavy transitive dependencies. A thin Messages-API client over OkHttp keeps the core portable and trivial to mock — so the same code runs in the harness and (later) the plugin.
+- **Raw HTTP for the LLM providers (not the official SDKs).** The agent core is destined for a RuneLite hub plugin, which must reuse the injected `OkHttpClient`/`Gson` and avoid heavy transitive dependencies. Thin clients over OkHttp keep the core portable and trivial to mock — so the same code runs in the harness and (later) the plugin.
+- **Provider-neutral message model.** The agent speaks in `TextPart`/`ToolUsePart`/`ToolResultPart`; each `LlmClient` translates to its own wire format (Anthropic content blocks, Gemini `contents`/`functionCall`). Adding a provider touches only its client + the `LlmProvider` enum.
 - **No DI container.** Plain constructor injection keeps the dependency footprint tiny and maps 1:1 onto `@Inject` in the plugin.
 - **Threading.** Upstream calls run on background/web-server threads (never a client thread); the rate limiter parks rather than `Thread.sleep`. When ported, the synchronous OkHttp `execute()` calls should become `enqueue()` with `clientThread.invoke()` callbacks.

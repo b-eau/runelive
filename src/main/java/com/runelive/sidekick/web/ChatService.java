@@ -7,6 +7,7 @@ import com.runelive.sidekick.context.PlayerContext;
 import com.runelive.sidekick.context.PlayerContextSource;
 import com.runelive.sidekick.llm.LlmMessage;
 import com.runelive.sidekick.llm.Modality;
+import com.runelive.sidekick.llm.Role;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -41,7 +42,7 @@ public class ChatService
 		}
 
 		List<LlmMessage> history = toHistory(request.messages);
-		if (history.isEmpty() || !"user".equals(lastRole(history)))
+		if (history.isEmpty() || history.get(history.size() - 1).getRole() != Role.USER)
 		{
 			return ChatDtos.ChatResponse.error("The conversation must end with a user message.");
 		}
@@ -106,11 +107,6 @@ public class ChatService
 		usage.outputTokens = reply.getOutputTokens();
 		response.usage = usage;
 		return response;
-	}
-
-	private static String lastRole(List<LlmMessage> history)
-	{
-		return history.get(history.size() - 1).getRole();
 	}
 
 	private static String firstNonBlank(String a, String b)

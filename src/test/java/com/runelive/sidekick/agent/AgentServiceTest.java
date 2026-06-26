@@ -4,14 +4,16 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.runelive.sidekick.agent.tools.AgentTool;
 import com.runelive.sidekick.context.PlayerContext;
 import com.runelive.sidekick.llm.LlmMessage;
 import com.runelive.sidekick.llm.LlmRequest;
 import com.runelive.sidekick.llm.Modality;
+import com.runelive.sidekick.llm.Role;
 import com.runelive.sidekick.llm.StopReason;
+import com.runelive.sidekick.llm.ToolResultPart;
+import com.runelive.sidekick.llm.ToolUsePart;
 import com.runelive.sidekick.testutil.FakeLlmClient;
 import java.util.List;
 import java.util.Map;
@@ -92,17 +94,22 @@ public class AgentServiceTest
 		assertFalse(invocation.isError());
 		assertTrue(invocation.getOutput().contains("1,645,000"));
 
-		// Second model call must include the assistant tool_use replay + a tool_result user turn.
+		// Second model call must include the assistant tool-call replay + a tool-result user turn.
 		assertEquals(2, llm.requests.size());
 		LlmRequest second = llm.requests.get(1);
 		assertEquals(3, second.getMessages().size());
+
 		LlmMessage assistantTurn = second.getMessages().get(1);
-		assertEquals("assistant", assistantTurn.getRole());
+		assertEquals(Role.ASSISTANT, assistantTurn.getRole());
+		assertTrue(assistantTurn.getParts().get(0) instanceof ToolUsePart);
+		assertEquals("price_tool", ((ToolUsePart) assistantTurn.getParts().get(0)).getName());
+
 		LlmMessage toolResultTurn = second.getMessages().get(2);
-		assertEquals("user", toolResultTurn.getRole());
-		JsonArray resultBlocks = toolResultTurn.getContent().getAsJsonArray();
-		assertEquals("tool_result", resultBlocks.get(0).getAsJsonObject().get("type").getAsString());
-		assertEquals("toolu_1", resultBlocks.get(0).getAsJsonObject().get("tool_use_id").getAsString());
+		assertEquals(Role.USER, toolResultTurn.getRole());
+		assertTrue(toolResultTurn.getParts().get(0) instanceof ToolResultPart);
+		ToolResultPart resultPart = (ToolResultPart) toolResultTurn.getParts().get(0);
+		assertEquals("toolu_1", resultPart.getToolUseId());
+		assertEquals("price_tool", resultPart.getName());
 	}
 
 	@Test

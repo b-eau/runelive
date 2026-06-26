@@ -7,6 +7,7 @@ import lombok.Value;
 public class ToolResult
 {
 	String toolUseId;
+	String name;
 	String content;
 	boolean error;
 }

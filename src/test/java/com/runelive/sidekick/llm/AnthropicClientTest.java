@@ -82,7 +82,6 @@ public class AnthropicClientTest
 		assertEquals("Abyssal whip", call.getInput().get("item").getAsString());
 		assertEquals(12, result.getInputTokens());
 		assertEquals(7, result.getOutputTokens());
-		assertEquals("assistant content is preserved for replay", 2, result.getAssistantContent().getAsJsonArray().size());
 
 		// Request building.
 		RecordedRequest request = server.takeRequest();
@@ -100,7 +99,9 @@ public class AnthropicClientTest
 		assertEquals(1, messages.size());
 		JsonObject first = messages.get(0).getAsJsonObject();
 		assertEquals("user", first.get("role").getAsString());
-		assertEquals("hi", first.get("content").getAsString());
+		JsonArray firstContent = first.getAsJsonArray("content");
+		assertEquals("text", firstContent.get(0).getAsJsonObject().get("type").getAsString());
+		assertEquals("hi", firstContent.get(0).getAsJsonObject().get("text").getAsString());
 
 		JsonArray tools = body.getAsJsonArray("tools");
 		assertEquals(1, tools.size());

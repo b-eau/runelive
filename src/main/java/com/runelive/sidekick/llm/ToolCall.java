@@ -7,7 +7,8 @@ import lombok.Value;
 @Value
 public class ToolCall
 {
-	String id;      // tool_use id, echoed back in the tool_result
+	String id;      // provider tool-call id, echoed back in the tool result
 	String name;
 	JsonObject input;
+	String signature; // optional opaque provider token to replay (e.g. Gemini thoughtSignature); may be null
 }

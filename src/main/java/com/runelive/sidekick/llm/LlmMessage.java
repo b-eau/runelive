@@ -1,58 +1,42 @@
 package com.runelive.sidekick.llm;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
+import java.util.ArrayList;
 import java.util.List;
 import lombok.Value;
 
 /**
- * One turn in the conversation, in Anthropic Messages API shape.
- *
- * <p>{@code content} is either a JSON string (plain user text) or a JSON array of content blocks.
- * Assistant turns are stored as the raw block array returned by the model so that thinking and
- * tool_use blocks are replayed back verbatim on the next request — a requirement for multi-step
- * tool use (and for thinking blocks on the same model).
+ * One turn in the conversation, as provider-neutral {@link ContentPart}s. Each {@link LlmClient}
+ * translates these to its own wire format.
  */
 @Value
 public class LlmMessage
 {
-	String role; // "user" | "assistant"
-	JsonElement content;
+	Role role;
+	List<ContentPart> parts;
 
 	public static LlmMessage userText(String text)
 	{
-		return new LlmMessage("user", new JsonPrimitive(text));
+		return new LlmMessage(Role.USER, List.of(new TextPart(text)));
 	}
 
-	public static LlmMessage assistant(JsonElement contentBlocks)
-	{
-		return new LlmMessage("assistant", contentBlocks);
-	}
-
-	/** A plain-text assistant turn (e.g. a prior reply replayed from the client transcript). */
 	public static LlmMessage assistantText(String text)
 	{
-		return new LlmMessage("assistant", new JsonPrimitive(text));
+		return new LlmMessage(Role.ASSISTANT, List.of(new TextPart(text)));
 	}
 
-	/** A user turn carrying one tool_result block per executed tool call. */
+	public static LlmMessage assistant(List<ContentPart> parts)
+	{
+		return new LlmMessage(Role.ASSISTANT, parts);
+	}
+
+	/** A user turn carrying one tool-result part per executed tool call. */
 	public static LlmMessage toolResults(List<ToolResult> results)
 	{
-		JsonArray blocks = new JsonArray();
+		List<ContentPart> parts = new ArrayList<>();
 		for (ToolResult result : results)
 		{
-			JsonObject block = new JsonObject();
-			block.addProperty("type", "tool_result");
-			block.addProperty("tool_use_id", result.getToolUseId());
-			block.addProperty("content", result.getContent());
-			if (result.isError())
-			{
-				block.addProperty("is_error", true);
-			}
-			blocks.add(block);
+			parts.add(new ToolResultPart(result.getToolUseId(), result.getName(), result.getContent(), result.isError()));
 		}
-		return new LlmMessage("user", blocks);
+		return new LlmMessage(Role.USER, parts);
 	}
 }
