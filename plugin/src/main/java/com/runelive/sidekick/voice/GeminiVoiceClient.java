@@ -18,11 +18,8 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 /**
- * Gemini-backed speech-to-text (STT) and text-to-speech (TTS).
- *
- * <p>STT: encodes a WAV file as inline base64 and asks {@code gemini-2.0-flash} to transcribe it.
- * TTS: sends the response text to {@code gemini-2.5-flash-preview-tts} and decodes the returned
- * PCM audio (24 kHz, 16-bit, mono, little-endian).
+ * Gemini-backed speech-to-text (STT): encodes a WAV file as inline base64 and asks
+ * {@code gemini-3.1-flash-lite} to transcribe it.
  *
  * <p>All methods run synchronously and must be called from a background thread.
  */
@@ -31,21 +28,18 @@ public class GeminiVoiceClient
 {
 	private static final MediaType JSON_MT = MediaType.get("application/json; charset=utf-8");
 	private static final String STT_MODEL = "gemini-3.1-flash-lite";
-	private static final String TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
 	private final OkHttpClient http;
 	private final Gson gson;
 	private final HttpUrl baseUrl;
 	private final String apiKey;
-	private final String ttsVoice;
 
-	public GeminiVoiceClient(OkHttpClient http, Gson gson, HttpUrl baseUrl, String apiKey, String ttsVoice)
+	public GeminiVoiceClient(OkHttpClient http, Gson gson, HttpUrl baseUrl, String apiKey)
 	{
 		this.http = http;
 		this.gson = gson;
 		this.baseUrl = baseUrl;
 		this.apiKey = apiKey;
-		this.ttsVoice = ttsVoice;
 	}
 
 	/**
@@ -89,50 +83,6 @@ public class GeminiVoiceClient
 
 		JsonObject response = post(STT_MODEL, body);
 		return extractText(response);
-	}
-
-	/**
-	 * Synthesises speech from text.
-	 *
-	 * @return raw 16-bit signed PCM at 24 kHz mono (little-endian), ready for {@link AudioPlayer}
-	 */
-	byte[] synthesize(String text) throws IOException
-	{
-		JsonObject promptPart = new JsonObject();
-		promptPart.addProperty("text", text);
-
-		JsonArray parts = new JsonArray();
-		parts.add(promptPart);
-
-		JsonObject userContent = new JsonObject();
-		userContent.addProperty("role", "user");
-		userContent.add("parts", parts);
-
-		JsonArray contents = new JsonArray();
-		contents.add(userContent);
-
-		JsonObject prebuiltVoice = new JsonObject();
-		prebuiltVoice.addProperty("voiceName", ttsVoice);
-
-		JsonObject voiceConfig = new JsonObject();
-		voiceConfig.add("prebuiltVoiceConfig", prebuiltVoice);
-
-		JsonObject speechConfig = new JsonObject();
-		speechConfig.add("voiceConfig", voiceConfig);
-
-		JsonArray modalities = new JsonArray();
-		modalities.add("AUDIO");
-
-		JsonObject genConfig = new JsonObject();
-		genConfig.add("responseModalities", modalities);
-		genConfig.add("speechConfig", speechConfig);
-
-		JsonObject body = new JsonObject();
-		body.add("contents", contents);
-		body.add("generationConfig", genConfig);
-
-		JsonObject response = post(TTS_MODEL, body);
-		return extractPcm(response);
 	}
 
 	private JsonObject post(String model, JsonObject body) throws IOException
@@ -187,34 +137,6 @@ public class GeminiVoiceClient
 			}
 		}
 		return sb.toString().trim();
-	}
-
-	private static byte[] extractPcm(JsonObject root)
-	{
-		JsonArray candidates = root.has("candidates") ? root.getAsJsonArray("candidates") : new JsonArray();
-		if (candidates.size() == 0)
-		{
-			throw new LlmException(0, "Gemini TTS returned no candidates");
-		}
-		JsonObject content = Json.optObject(candidates.get(0).getAsJsonObject(), "content");
-		if (content == null)
-		{
-			throw new LlmException(0, "Gemini TTS response has no content");
-		}
-		JsonArray parts = content.has("parts") ? content.getAsJsonArray("parts") : new JsonArray();
-		for (JsonElement el : parts)
-		{
-			if (!el.isJsonObject())
-			{
-				continue;
-			}
-			JsonObject inlineData = Json.optObject(el.getAsJsonObject(), "inlineData");
-			if (inlineData != null && inlineData.has("data"))
-			{
-				return Base64.getDecoder().decode(inlineData.get("data").getAsString());
-			}
-		}
-		throw new LlmException(0, "Gemini TTS response contained no audio data");
 	}
 
 	private static String truncate(String s)

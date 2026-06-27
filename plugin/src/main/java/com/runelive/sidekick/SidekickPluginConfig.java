@@ -17,7 +17,7 @@ public interface SidekickPluginConfig extends Config
 
 	@ConfigSection(
 		name = "Voice",
-		description = "Push-to-talk voice input and spoken AI responses",
+		description = "Push-to-talk voice input",
 		position = 1)
 	String voiceSection = "voice";
 
@@ -91,34 +91,12 @@ public interface SidekickPluginConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "enableTts",
-		name = "Speak responses (TTS)",
-		description = "Read AI responses aloud via Gemini text-to-speech. Uncheck for text-only.",
-		section = voiceSection,
-		position = 2)
-	default boolean enableTts()
-	{
-		return true;
-	}
-
-	@ConfigItem(
-		keyName = "ttsVoice",
-		name = "TTS voice",
-		description = "Gemini TTS voice name: Zephyr, Puck, Charon, Kore, Fenrir, Aoede.",
-		section = voiceSection,
-		position = 3)
-	default String ttsVoice()
-	{
-		return "Achernar";
-	}
-
-	@ConfigItem(
 		keyName = "voiceApiKey",
 		name = "Voice API key (Gemini)",
 		description = "Gemini key for voice. Leave blank to reuse the main key when provider = gemini.",
 		secret = true,
 		section = voiceSection,
-		position = 4)
+		position = 2)
 	default String voiceApiKey()
 	{
 		return "";

@@ -21,11 +21,19 @@ import com.runelive.sidekick.llm.LlmProvider;
 import com.runelive.sidekick.voice.GeminiVoiceClient;
 import com.runelive.sidekick.voice.VoiceService;
 import com.runelive.sidekick.web.ChatService;
+import java.awt.Color;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import javax.inject.Inject;
+import javax.swing.SwingUtilities;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.chat.ChatMessageManager;
@@ -36,8 +44,9 @@ import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.ui.ClientToolbar;
+import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.util.HotkeyListener;
-import java.util.concurrent.TimeUnit;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 
@@ -89,9 +98,14 @@ public class SidekickPlugin extends Plugin
 	@Inject
 	private ChatMessageManager chatMessageManager;
 
+	@Inject
+	private ClientToolbar clientToolbar;
+
 	@Getter
 	private ChatService chatService;
 
+	private SidekickPanel sidekickPanel;
+	private NavigationButton navButton;
 	private PriceClient priceClient;
 	private WikiClient wikiClient;
 	private VoiceService voiceService;
@@ -101,6 +115,16 @@ public class SidekickPlugin extends Plugin
 	protected void startUp()
 	{
 		eventBus.register(contextSource);
+
+		sidekickPanel = new SidekickPanel();
+		navButton = NavigationButton.builder()
+			.tooltip("OSRS Sidekick")
+			.icon(buildIcon())
+			.priority(5)
+			.panel(sidekickPanel)
+			.build();
+		clientToolbar.addNavigation(navButton);
+
 		startServices();
 	}
 
@@ -108,6 +132,9 @@ public class SidekickPlugin extends Plugin
 	protected void shutDown()
 	{
 		stopServices();
+		clientToolbar.removeNavigation(navButton);
+		navButton = null;
+		sidekickPanel = null;
 		eventBus.unregister(contextSource);
 	}
 
@@ -178,17 +205,19 @@ public class SidekickPlugin extends Plugin
 			String voiceKey = resolveVoiceApiKey(config);
 			if (voiceKey != null)
 			{
-				// TTS responses are large; RuneLite's default timeout is too short.
-			OkHttpClient voiceHttpClient = okHttpClient.newBuilder()
-				.readTimeout(60, TimeUnit.SECONDS)
-				.build();
-			GeminiVoiceClient voiceClient = new GeminiVoiceClient(
+				OkHttpClient voiceHttpClient = okHttpClient.newBuilder()
+					.readTimeout(60, TimeUnit.SECONDS)
+					.build();
+				GeminiVoiceClient voiceClient = new GeminiVoiceClient(
 					voiceHttpClient, gson,
 					HttpUrl.get("https://generativelanguage.googleapis.com"),
-					voiceKey,
-					config.ttsVoice());
+					voiceKey);
+				final SidekickPanel capturedPanel = sidekickPanel;
+				final NavigationButton capturedNav = navButton;
 				voiceService = new VoiceService(
-					voiceClient, agentService, contextSource, chatMessageManager, config.enableTts());
+					voiceClient, agentService, contextSource, chatMessageManager,
+					capturedPanel,
+					() -> SwingUtilities.invokeLater(() -> clientToolbar.openPanel(capturedNav)));
 				hotkeyListener = new HotkeyListener(() -> config.voiceHotkey())
 				{
 					@Override
@@ -204,7 +233,7 @@ public class SidekickPlugin extends Plugin
 					}
 				};
 				keyManager.registerKeyListener(hotkeyListener);
-				log.info("OSRS Sidekick voice activated (tts={})", config.enableTts());
+				log.info("OSRS Sidekick voice activated");
 			}
 			else
 			{
@@ -245,6 +274,23 @@ public class SidekickPlugin extends Plugin
 			return (mainKey != null && !mainKey.trim().isEmpty()) ? mainKey.trim() : null;
 		}
 		return null;
+	}
+
+	private static BufferedImage buildIcon()
+	{
+		BufferedImage img = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = img.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		g.setColor(new Color(0xFF, 0x98, 0x1F));
+		g.fillOval(0, 0, 15, 15);
+		g.setColor(Color.WHITE);
+		g.setFont(new Font(Font.DIALOG, Font.BOLD, 10));
+		FontMetrics fm = g.getFontMetrics();
+		int x = (15 - fm.stringWidth("S")) / 2;
+		int y = (15 - fm.getHeight()) / 2 + fm.getAscent();
+		g.drawString("S", x, y);
+		g.dispose();
+		return img;
 	}
 
 	private static LlmClient buildLlmClient(SidekickPluginConfig config, OkHttpClient http, Gson gson)
