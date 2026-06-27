@@ -139,8 +139,8 @@ public class AgentService
 			}
 			case "get_grand_exchange_price":
 			{
-				String item = call.getInput().has("item_name")
-					? call.getInput().get("item_name").getAsString() : "...";
+				String item = call.getInput().has("item")
+					? call.getInput().get("item").getAsString() : "...";
 				return "GE price: " + item;
 			}
 			default:

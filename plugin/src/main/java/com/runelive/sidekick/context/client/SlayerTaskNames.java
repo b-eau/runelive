@@ -127,6 +127,7 @@ final class SlayerTaskNames
 		NAMES.put(111, "The Leviathan");
 		NAMES.put(112, "The Whisperer");
 		NAMES.put(113, "Vardorvis");
+		NAMES.put(127, "Araxytes");
 	}
 
 	private SlayerTaskNames()
