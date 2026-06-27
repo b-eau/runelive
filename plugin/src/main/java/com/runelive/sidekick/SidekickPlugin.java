@@ -13,7 +13,6 @@ import com.runelive.sidekick.context.client.ClientPlayerContextSource;
 import com.runelive.sidekick.context.prices.ItemPrice;
 import com.runelive.sidekick.context.prices.PriceClient;
 import com.runelive.sidekick.context.wiki.WikiClient;
-import com.runelive.sidekick.context.wiki.WikiResult;
 import com.runelive.sidekick.http.HttpJson;
 import com.runelive.sidekick.llm.AnthropicClient;
 import com.runelive.sidekick.llm.GeminiClient;
@@ -32,6 +31,8 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.EventBus;
+import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
@@ -48,13 +49,14 @@ import okhttp3.OkHttpClient;
  * is identical and re-used verbatim.
  *
  * <p>The plugin is disabled by default. When enabled, it contacts the configured AI provider's
- * servers using the player's API key.
+ * servers using the player's API key. Services are (re)started whenever the config changes so the
+ * user does not need to toggle the plugin off and on after adjusting settings.
  */
 @Slf4j
 @PluginDescriptor(
 	name = "OSRS Sidekick",
 	configName = "osrs-sidekick",
-	description = "Personalised AI chat sidekick — talks to an external AI provider to give advice tailored to your account",
+	description = "Personalised AI chat sidekick — talks to an external AI provider to give advice tailored to your account. Requires an API key for the chosen provider.",
 	tags = {"ai", "chat", "assistant", "advice", "helper"},
 	enabledByDefault = false)
 public class SidekickPlugin extends Plugin
@@ -97,15 +99,43 @@ public class SidekickPlugin extends Plugin
 	@Override
 	protected void startUp()
 	{
-		if (!config.enableSidekick())
+		eventBus.register(contextSource);
+		startServices();
+	}
+
+	@Override
+	protected void shutDown()
+	{
+		stopServices();
+		eventBus.unregister(contextSource);
+	}
+
+	/** Re-applies config without requiring the user to disable and re-enable the plugin. */
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event)
+	{
+		if (!"osrs-sidekick".equals(event.getGroup()))
 		{
-			log.debug("OSRS Sidekick is disabled in config; not starting");
 			return;
 		}
+		stopServices();
+		startServices();
+	}
+
+	@Provides
+	SidekickPluginConfig provideConfig(ConfigManager configManager)
+	{
+		return configManager.getConfig(SidekickPluginConfig.class);
+	}
+
+	// ── Private ──────────────────────────────────────────────────────────────────────────────────
+
+	private void startServices()
+	{
 		String apiKey = config.apiKey();
 		if (apiKey == null || apiKey.trim().isEmpty())
 		{
-			log.warn("OSRS Sidekick: no API key configured — plugin will not start");
+			log.info("OSRS Sidekick: no API key set — configure one in the plugin settings");
 			return;
 		}
 
@@ -177,14 +207,10 @@ public class SidekickPlugin extends Plugin
 			}
 		}
 
-		// Register for game events so the snapshot stays current
-		eventBus.register(contextSource);
-
-		log.info("OSRS Sidekick started (provider: {}, model: {})", config.provider(), config.model());
+		log.info("OSRS Sidekick started (provider={}, model={})", config.provider(), config.model());
 	}
 
-	@Override
-	protected void shutDown()
+	private void stopServices()
 	{
 		if (hotkeyListener != null)
 		{
@@ -196,23 +222,11 @@ public class SidekickPlugin extends Plugin
 			voiceService.shutdown();
 			voiceService = null;
 		}
-		eventBus.unregister(contextSource);
 		chatService = null;
 		priceClient = null;
 		wikiClient = null;
-		log.info("OSRS Sidekick stopped");
 	}
 
-	@Provides
-	SidekickPluginConfig provideConfig(ConfigManager configManager)
-	{
-		return configManager.getConfig(SidekickPluginConfig.class);
-	}
-
-	/**
-	 * Returns the Gemini API key to use for voice features, or {@code null} if unavailable.
-	 * Prefers the dedicated {@code voiceApiKey}; falls back to the main key when provider = gemini.
-	 */
 	private static String resolveVoiceApiKey(SidekickPluginConfig config)
 	{
 		String voiceKey = config.voiceApiKey();
@@ -238,7 +252,7 @@ public class SidekickPlugin extends Plugin
 		{
 			if (model == null || model.isEmpty())
 			{
-				model = "gemini-3.5-flash";
+				model = "gemini-2.5-flash";
 			}
 			return GeminiClient.builder()
 				.http(http)
