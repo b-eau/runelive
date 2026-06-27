@@ -49,7 +49,7 @@ public class ChatService
 
 		Modality modality = Modality.fromString(request.modality);
 		PlayerContext context = contextSource.fetch(player);
-		AgentReply reply = agentService.chat(context, modality, history);
+		AgentReply reply = agentService.chat(context, modality, history, null);
 
 		return toResponse(reply, modality, context);
 	}

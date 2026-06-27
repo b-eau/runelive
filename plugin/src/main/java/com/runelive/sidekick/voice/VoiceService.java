@@ -149,7 +149,8 @@ public class VoiceService
 			}
 
 			AgentReply reply = agentService.chat(
-				context, Modality.VOICE, List.of(LlmMessage.userText(text)));
+				context, Modality.VOICE, List.of(LlmMessage.userText(text)),
+				step -> postMessage("<col=888888>" + step + "</col>"));
 
 			postMessage("<col=00bcd4>Sidekick:</col> " + reply.getText());
 
