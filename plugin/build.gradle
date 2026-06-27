@@ -2,6 +2,9 @@ plugins {
 	id 'java'
 }
 
+// Ensure the root project (shared core) is evaluated before we reference its sourceSets below.
+evaluationDependsOn(':')
+
 repositories {
 	maven {
 		url 'https://repo.runelite.net'
@@ -10,6 +13,32 @@ repositories {
 }
 
 def runeLiteVersion = '1.12.31.1'
+
+// ── Dev runner ────────────────────────────────────────────────────────────────────────────────────
+// Separate config so we don't bleed runtime deps into the compile classpath.
+configurations {
+	runner
+}
+
+// Launches the full RuneLite client with this plugin on the classpath.
+// RuneLite provides OkHttp 3.x and Gson 2.8.5 at runtime — the shared core code is written
+// to use the 3.x-compatible APIs so it works in both the web devtool (OkHttp 4.x) and here.
+task run(type: JavaExec, dependsOn: [classes, project(':').tasks.named('classes')]) {
+	classpath = sourceSets.main.output +
+				project(':').sourceSets.main.output +
+				configurations.runner
+	mainClass = 'net.runelite.client.RuneLite'
+	enableAssertions = true
+	// macOS requires the OpenGL/Cocoa event loop on the main (first) thread.
+	if (System.properties['os.name'].toLowerCase().contains('mac')) {
+		jvmArgs '-XstartOnFirstThread'
+	}
+}
+
+dependencies {
+	runner(group: 'net.runelite', name: 'client', version: runeLiteVersion)
+}
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 dependencies {
 	// RuneLite client — compileOnly per hub-plugin convention; provided at runtime by the loader.
