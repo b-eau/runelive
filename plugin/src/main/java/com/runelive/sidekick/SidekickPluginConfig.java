@@ -22,18 +22,6 @@ public interface SidekickPluginConfig extends Config
 	String voiceSection = "voice";
 
 	@ConfigItem(
-		keyName = "enableSidekick",
-		name = "Enable AI Sidekick",
-		description = "Activates the AI chat sidekick, which uses an external AI service.",
-		warning = "This feature submits your IP address to a 3rd-party server not controlled or verified by RuneLite developers",
-		section = connectionSection,
-		position = 0)
-	default boolean enableSidekick()
-	{
-		return false;
-	}
-
-	@ConfigItem(
 		keyName = "provider",
 		name = "AI Provider",
 		description = "Which AI provider to use (anthropic or gemini).",

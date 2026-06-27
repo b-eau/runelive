@@ -30,7 +30,7 @@ import okhttp3.Response;
 public class GeminiVoiceClient
 {
 	private static final MediaType JSON_MT = MediaType.get("application/json; charset=utf-8");
-	private static final String STT_MODEL = "gemini-2.0-flash";
+	private static final String STT_MODEL = "gemini-3.1-flash-lite";
 	private static final String TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
 	private final OkHttpClient http;
