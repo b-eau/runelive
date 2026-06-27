@@ -1,5 +1,6 @@
 package com.runelive.sidekick.voice;
 
+import com.runelive.sidekick.SidekickPanel;
 import com.runelive.sidekick.agent.AgentReply;
 import com.runelive.sidekick.agent.AgentService;
 import com.runelive.sidekick.context.PlayerContext;
@@ -19,12 +20,15 @@ import net.runelite.client.chat.QueuedMessage;
 
 /**
  * Coordinates the push-to-talk voice pipeline:
- * microphone → Gemini STT → AgentService → (Gemini TTS → speakers).
+ * microphone → Gemini STT → AgentService → {@link SidekickPanel}.
  *
- * <p>All blocking work (audio capture, network calls, audio playback) executes on a
- * single daemon thread so neither the client thread nor the OkHttp pool is blocked.
- * An {@link AtomicBoolean} flag prevents a new capture from starting until the
- * previous pipeline run (including TTS playback) completes.
+ * <p>Status messages (listening, transcribing, tool lookups) are posted to game chat so the
+ * player can follow along without leaving the game view. The finished response lands in the
+ * sidebar panel, which is brought into focus automatically via the {@code openPanel} callback.
+ *
+ * <p>All blocking work (audio capture, network calls) executes on a single daemon thread so
+ * neither the client thread nor the OkHttp pool is blocked. An {@link AtomicBoolean} flag
+ * prevents a new capture from starting until the previous pipeline run completes.
  */
 @Slf4j
 public class VoiceService
@@ -36,10 +40,12 @@ public class VoiceService
 	private final AgentService agentService;
 	private final PlayerContextSource contextSource;
 	private final ChatMessageManager chatMessages;
-	private final boolean ttsEnabled;
+	private final SidekickPanel panel;
+	private final Runnable openPanel;
 
 	private final AudioCapture capture = new AudioCapture();
-	private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
+	private final ExecutorService executor = Executors.newSingleThreadExecutor(r ->
+	{
 		Thread t = new Thread(r, "sidekick-voice");
 		t.setDaemon(true);
 		return t;
@@ -51,13 +57,15 @@ public class VoiceService
 		AgentService agentService,
 		PlayerContextSource contextSource,
 		ChatMessageManager chatMessages,
-		boolean ttsEnabled)
+		SidekickPanel panel,
+		Runnable openPanel)
 	{
 		this.voiceClient = voiceClient;
 		this.agentService = agentService;
 		this.contextSource = contextSource;
 		this.chatMessages = chatMessages;
-		this.ttsEnabled = ttsEnabled;
+		this.panel = panel;
+		this.openPanel = openPanel;
 	}
 
 	/**
@@ -83,7 +91,7 @@ public class VoiceService
 	}
 
 	/**
-	 * Stops microphone capture and launches the transcription → agent → TTS pipeline
+	 * Stops microphone capture and launches the transcription → agent pipeline
 	 * asynchronously. Safe to call from the client thread (AWT EDT).
 	 */
 	public void stopAndProcess()
@@ -152,12 +160,8 @@ public class VoiceService
 				context, Modality.VOICE, List.of(LlmMessage.userText(text)),
 				step -> postMessage("<col=888888>" + step + "</col>"));
 
-			postMessage("<col=00bcd4>Sidekick:</col> " + reply.getText());
-
-			if (ttsEnabled)
-			{
-				speakQuietly(reply.getText());
-			}
+			panel.showResponse(text, reply.getText());
+			openPanel.run();
 		}
 		catch (Exception e)
 		{
@@ -167,20 +171,6 @@ public class VoiceService
 		finally
 		{
 			busy.set(false);
-		}
-	}
-
-	private void speakQuietly(String text)
-	{
-		try
-		{
-			byte[] pcm = voiceClient.synthesize(text);
-			AudioPlayer.play(pcm);
-		}
-		catch (Exception e)
-		{
-			// TTS failure is non-fatal — text response is already shown in chat.
-			log.debug("TTS failed, falling back to text only", e);
 		}
 	}
 
