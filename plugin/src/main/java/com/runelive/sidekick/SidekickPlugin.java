@@ -19,6 +19,8 @@ import com.runelive.sidekick.llm.AnthropicClient;
 import com.runelive.sidekick.llm.GeminiClient;
 import com.runelive.sidekick.llm.LlmClient;
 import com.runelive.sidekick.llm.LlmProvider;
+import com.runelive.sidekick.voice.GeminiVoiceClient;
+import com.runelive.sidekick.voice.VoiceService;
 import com.runelive.sidekick.web.ChatService;
 import java.time.Clock;
 import java.time.Duration;
@@ -27,10 +29,13 @@ import java.util.Map;
 import javax.inject.Inject;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.EventBus;
+import net.runelite.client.input.KeyManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.util.HotkeyListener;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 
@@ -75,11 +80,19 @@ public class SidekickPlugin extends Plugin
 	@Inject
 	private ClientPlayerContextSource contextSource;
 
+	@Inject
+	private KeyManager keyManager;
+
+	@Inject
+	private ChatMessageManager chatMessageManager;
+
 	@Getter
 	private ChatService chatService;
 
 	private PriceClient priceClient;
 	private WikiClient wikiClient;
+	private VoiceService voiceService;
+	private HotkeyListener hotkeyListener;
 
 	@Override
 	protected void startUp()
@@ -128,6 +141,42 @@ public class SidekickPlugin extends Plugin
 		// Context: live client data
 		chatService = new ChatService(contextSource, agentService, null);
 
+		// Voice (optional — requires Gemini key regardless of main LLM provider)
+		if (config.enableVoice())
+		{
+			String voiceKey = resolveVoiceApiKey(config);
+			if (voiceKey != null)
+			{
+				GeminiVoiceClient voiceClient = new GeminiVoiceClient(
+					okHttpClient, gson,
+					HttpUrl.get("https://generativelanguage.googleapis.com"),
+					voiceKey,
+					config.ttsVoice());
+				voiceService = new VoiceService(
+					voiceClient, agentService, contextSource, chatMessageManager, config.enableTts());
+				hotkeyListener = new HotkeyListener(() -> config.voiceHotkey())
+				{
+					@Override
+					public void hotkeyPressed()
+					{
+						voiceService.startRecording();
+					}
+
+					@Override
+					public void hotkeyReleased()
+					{
+						voiceService.stopAndProcess();
+					}
+				};
+				keyManager.registerKeyListener(hotkeyListener);
+				log.info("OSRS Sidekick voice activated (tts={})", config.enableTts());
+			}
+			else
+			{
+				log.warn("OSRS Sidekick: voice enabled but no Gemini API key available — voice disabled");
+			}
+		}
+
 		// Register for game events so the snapshot stays current
 		eventBus.register(contextSource);
 
@@ -137,6 +186,16 @@ public class SidekickPlugin extends Plugin
 	@Override
 	protected void shutDown()
 	{
+		if (hotkeyListener != null)
+		{
+			keyManager.unregisterKeyListener(hotkeyListener);
+			hotkeyListener = null;
+		}
+		if (voiceService != null)
+		{
+			voiceService.shutdown();
+			voiceService = null;
+		}
 		eventBus.unregister(contextSource);
 		chatService = null;
 		priceClient = null;
@@ -148,6 +207,25 @@ public class SidekickPlugin extends Plugin
 	SidekickPluginConfig provideConfig(ConfigManager configManager)
 	{
 		return configManager.getConfig(SidekickPluginConfig.class);
+	}
+
+	/**
+	 * Returns the Gemini API key to use for voice features, or {@code null} if unavailable.
+	 * Prefers the dedicated {@code voiceApiKey}; falls back to the main key when provider = gemini.
+	 */
+	private static String resolveVoiceApiKey(SidekickPluginConfig config)
+	{
+		String voiceKey = config.voiceApiKey();
+		if (voiceKey != null && !voiceKey.trim().isEmpty())
+		{
+			return voiceKey.trim();
+		}
+		if (LlmProvider.fromString(config.provider()) == LlmProvider.GEMINI)
+		{
+			String mainKey = config.apiKey();
+			return (mainKey != null && !mainKey.trim().isEmpty()) ? mainKey.trim() : null;
+		}
+		return null;
 	}
 
 	private static LlmClient buildLlmClient(SidekickPluginConfig config, OkHttpClient http, Gson gson)

@@ -4,6 +4,7 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
+import net.runelite.client.config.Keybind;
 
 @ConfigGroup("osrs-sidekick")
 public interface SidekickPluginConfig extends Config
@@ -13,6 +14,12 @@ public interface SidekickPluginConfig extends Config
 		description = "LLM provider and credentials",
 		position = 0)
 	String connectionSection = "connection";
+
+	@ConfigSection(
+		name = "Voice",
+		description = "Push-to-talk voice input and spoken AI responses",
+		position = 1)
+	String voiceSection = "voice";
 
 	@ConfigItem(
 		keyName = "enableSidekick",
@@ -69,5 +76,63 @@ public interface SidekickPluginConfig extends Config
 	default int maxTokens()
 	{
 		return 2048;
+	}
+
+	// ── Voice ───────────────────────────────────────────────────────────────────────────────────
+
+	@ConfigItem(
+		keyName = "enableVoice",
+		name = "Enable voice input",
+		description = "Hold the push-to-talk key to speak your question. Requires a Gemini API key.",
+		section = voiceSection,
+		position = 0)
+	default boolean enableVoice()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "voiceHotkey",
+		name = "Push-to-talk key",
+		description = "Hold this key while speaking, then release when done.",
+		section = voiceSection,
+		position = 1)
+	default Keybind voiceHotkey()
+	{
+		return Keybind.NOT_SET;
+	}
+
+	@ConfigItem(
+		keyName = "enableTts",
+		name = "Speak responses (TTS)",
+		description = "Read AI responses aloud via Gemini text-to-speech. Uncheck for text-only.",
+		section = voiceSection,
+		position = 2)
+	default boolean enableTts()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "ttsVoice",
+		name = "TTS voice",
+		description = "Gemini TTS voice name: Zephyr, Puck, Charon, Kore, Fenrir, Aoede.",
+		section = voiceSection,
+		position = 3)
+	default String ttsVoice()
+	{
+		return "Zephyr";
+	}
+
+	@ConfigItem(
+		keyName = "voiceApiKey",
+		name = "Voice API key (Gemini)",
+		description = "Gemini key for voice. Leave blank to reuse the main key when provider = gemini.",
+		secret = true,
+		section = voiceSection,
+		position = 4)
+	default String voiceApiKey()
+	{
+		return "";
 	}
 }
