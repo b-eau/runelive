@@ -56,6 +56,46 @@ public class PlayerContext
 	 *  {@code null} if from cloud APIs or player location is unknown. */
 	String currentLocation;
 
+	// ── Live client: immediate game state (null when from cloud APIs) ────────────────────────────
+
+	/** Current hitpoints. {@code null} if from cloud APIs. */
+	Integer currentHp;
+	/** Maximum hitpoints (real level). {@code null} if from cloud APIs. */
+	Integer maxHp;
+	/** Current prayer points. {@code null} if from cloud APIs. */
+	Integer currentPrayer;
+	/** Maximum prayer points (real level). {@code null} if from cloud APIs. */
+	Integer maxPrayer;
+	/** Run energy 0–100 (%). {@code null} if from cloud APIs. */
+	Integer runEnergy;
+	/** Player weight in kg. {@code null} if from cloud APIs. */
+	Integer weight;
+	/** Special attack energy 0–100 (%). {@code null} if from cloud APIs. */
+	Integer specialAttack;
+	/** Active spellbook: "Standard", "Ancient", "Lunar", or "Arceuus". {@code null} if from cloud APIs. */
+	String spellbook;
+	/** Names of all currently active prayers. Empty list = none active. {@code null} if from cloud APIs. */
+	List<String> activePrayers;
+	/** Skills currently boosted/drained relative to real level: skill name → boosted level.
+	 *  Only contains entries where boosted level differs from the real level.
+	 *  {@code null} if from cloud APIs. */
+	Map<String, Integer> boostedSkills;
+	/** NPC the player is currently interacting with, e.g. "Vorkath (lvl 732)".
+	 *  {@code null} if not in combat or from cloud APIs. */
+	String npcTarget;
+	/** Current slayer assignment, e.g. "87 × Dagannoth".
+	 *  {@code null} if no task or from cloud APIs. */
+	String slayerTask;
+	/** Contents of the player's inventory (28 slots). {@code null} if from cloud APIs. */
+	List<InventoryItem> inventory;
+	/** Worn equipment by slot, e.g. "weapon" → "Twisted bow". {@code null} if from cloud APIs. */
+	Map<String, String> equipment;
+	/** Wilderness level 1–55+, or {@code null} if not in the Wilderness. */
+	Integer wildernessLevel;
+	/** {@code true} if the player is inside an instanced region (raids, boss rooms).
+	 *  {@code null} if from cloud APIs. */
+	Boolean inInstance;
+
 	@Value
 	public static class SkillStat
 	{

@@ -23,7 +23,8 @@ final class PlayerContextFormatter
 
 	static String toContextBlock(PlayerContext c)
 	{
-		boolean hasLiveData = c.getBank() != null || c.getQuests() != null || c.getDiaries() != null;
+		boolean hasLiveData = c.getBank() != null || c.getQuests() != null
+			|| c.getDiaries() != null || c.getCurrentHp() != null;
 		StringBuilder sb = new StringBuilder();
 
 		sb.append("PLAYER ACCOUNT SNAPSHOT");
@@ -63,6 +64,12 @@ final class PlayerContextFormatter
 		{
 			sb.append("- Current location: ").append(c.getCurrentLocation()).append('\n');
 		}
+
+		// Live state (vitals, combat, inventory, equipment)
+		appendCurrentState(sb, c);
+		appendCombat(sb, c);
+		appendEquipment(sb, c);
+		appendInventory(sb, c);
 
 		// Skills
 		if (c.getSkills() != null && !c.getSkills().isEmpty())
@@ -124,6 +131,178 @@ final class PlayerContextFormatter
 		appendBank(sb, c);
 
 		return sb.toString();
+	}
+
+	private static void appendCurrentState(StringBuilder sb, PlayerContext c)
+	{
+		if (c.getCurrentHp() == null)
+		{
+			return;
+		}
+		sb.append("\nCURRENT STATE:\n");
+
+		sb.append("- HP: ").append(c.getCurrentHp());
+		if (c.getMaxHp() != null)
+		{
+			sb.append('/').append(c.getMaxHp());
+		}
+		if (c.getCurrentPrayer() != null)
+		{
+			sb.append(" | Prayer: ").append(c.getCurrentPrayer());
+			if (c.getMaxPrayer() != null)
+			{
+				sb.append('/').append(c.getMaxPrayer());
+			}
+		}
+		if (c.getRunEnergy() != null)
+		{
+			sb.append(" | Run: ").append(c.getRunEnergy()).append('%');
+		}
+		if (c.getWeight() != null)
+		{
+			sb.append(" | Weight: ").append(c.getWeight()).append(" kg");
+		}
+		if (c.getSpecialAttack() != null)
+		{
+			sb.append(" | Spec: ").append(c.getSpecialAttack()).append('%');
+		}
+		sb.append('\n');
+
+		if (c.getSpellbook() != null)
+		{
+			sb.append("- Spellbook: ").append(c.getSpellbook());
+			if (c.getActivePrayers() != null && !c.getActivePrayers().isEmpty())
+			{
+				sb.append(" | Active prayers: ").append(String.join(", ", c.getActivePrayers()));
+			}
+			sb.append('\n');
+		}
+
+		if (c.getWildernessLevel() != null)
+		{
+			sb.append("- Wilderness level: ").append(c.getWildernessLevel()).append('\n');
+		}
+		if (Boolean.TRUE.equals(c.getInInstance()))
+		{
+			sb.append("- Inside instanced region (raid / boss instance)\n");
+		}
+
+		if (c.getBoostedSkills() != null && !c.getBoostedSkills().isEmpty())
+		{
+			sb.append("- Boosted skills: ");
+			StringJoiner boosts = new StringJoiner(", ");
+			// Show in skill order where possible
+			for (String skill : SKILL_ORDER)
+			{
+				Integer boosted = c.getBoostedSkills().get(skill);
+				if (boosted == null)
+				{
+					continue;
+				}
+				PlayerContext.SkillStat base = c.skill(skill);
+				if (base != null)
+				{
+					int delta = boosted - base.getLevel();
+					String sign = delta >= 0 ? "+" : "";
+					boosts.add(capitalize(skill) + " " + sign + delta + " (" + base.getLevel() + "→" + boosted + ")");
+				}
+				else
+				{
+					boosts.add(capitalize(skill) + " " + boosted);
+				}
+			}
+			// Any skills not in SKILL_ORDER
+			for (Map.Entry<String, Integer> e : c.getBoostedSkills().entrySet())
+			{
+				if (!SKILL_ORDER.contains(e.getKey()))
+				{
+					boosts.add(capitalize(e.getKey()) + " " + e.getValue());
+				}
+			}
+			sb.append(boosts).append('\n');
+		}
+	}
+
+	private static void appendCombat(StringBuilder sb, PlayerContext c)
+	{
+		boolean hasTarget = c.getNpcTarget() != null;
+		boolean hasTask = c.getSlayerTask() != null;
+		if (!hasTarget && !hasTask)
+		{
+			return;
+		}
+		sb.append("\nCOMBAT:\n");
+		if (hasTarget)
+		{
+			sb.append("- Target: ").append(c.getNpcTarget()).append('\n');
+		}
+		if (hasTask)
+		{
+			sb.append("- Slayer task: ").append(c.getSlayerTask()).append('\n');
+		}
+	}
+
+	private static void appendEquipment(StringBuilder sb, PlayerContext c)
+	{
+		if (c.getEquipment() == null || c.getEquipment().isEmpty())
+		{
+			return;
+		}
+		sb.append("\nEQUIPMENT:\n  ");
+		// Display in a fixed, readable slot order
+		String[] slotOrder = {"weapon", "shield", "head", "body", "legs", "cape",
+			"amulet", "gloves", "boots", "ring", "ammo"};
+		StringJoiner gear = new StringJoiner(" | ");
+		for (String slot : slotOrder)
+		{
+			String item = c.getEquipment().get(slot);
+			if (item != null)
+			{
+				gear.add(capitalize(slot) + ": " + item);
+			}
+		}
+		// Any remaining slots not in the ordered list
+		for (Map.Entry<String, String> e : c.getEquipment().entrySet())
+		{
+			boolean listed = false;
+			for (String s : slotOrder)
+			{
+				if (s.equals(e.getKey()))
+				{
+					listed = true;
+					break;
+				}
+			}
+			if (!listed)
+			{
+				gear.add(capitalize(e.getKey()) + ": " + e.getValue());
+			}
+		}
+		sb.append(gear).append('\n');
+	}
+
+	private static void appendInventory(StringBuilder sb, PlayerContext c)
+	{
+		if (c.getInventory() == null)
+		{
+			return;
+		}
+		sb.append("\nINVENTORY:\n  ");
+		if (c.getInventory().isEmpty())
+		{
+			sb.append("(empty)");
+		}
+		else
+		{
+			StringJoiner items = new StringJoiner(", ");
+			for (InventoryItem item : c.getInventory())
+			{
+				String label = item.getName() + (item.isNoted() ? " (noted)" : "");
+				items.add(item.getQuantity() > 1 ? label + " x" + item.getQuantity() : label);
+			}
+			sb.append(items);
+		}
+		sb.append('\n');
 	}
 
 	private static void appendQuests(StringBuilder sb, PlayerContext c)
