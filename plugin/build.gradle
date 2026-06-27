@@ -19,7 +19,10 @@ dependencies {
 	// The portable core (cache, http, context model, llm, agent) — the part that ports verbatim.
 	// At runtime in the plugin, OkHttp/Gson are provided transitively by the RuneLite client;
 	// they are declared as implementation here only for the web-devtool standalone build path.
-	implementation project(':')
+	implementation(project(':')) {
+		// RuneLite ships logback-classic; slf4j-simple from the web devtool conflicts.
+		exclude group: 'org.slf4j', module: 'slf4j-simple'
+	}
 
 	compileOnly 'org.projectlombok:lombok:1.18.30'
 	annotationProcessor 'org.projectlombok:lombok:1.18.30'
