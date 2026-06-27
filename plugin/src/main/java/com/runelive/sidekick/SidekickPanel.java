@@ -41,7 +41,8 @@ public class SidekickPanel extends PluginPanel
 
 	private static final String PLACEHOLDER =
 		"<p style='color:#666666;text-align:center;margin-top:24px;'>"
-			+ "Hold the push-to-talk key, speak your question, then release."
+			+ "Type <b style='color:#888888'>::sk your question</b> in chat,"
+			+ " or hold the push-to-talk key and speak."
 			+ "</p>";
 
 	private final JLabel queryLabel;

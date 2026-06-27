@@ -103,10 +103,16 @@ public class AgentService
 			return new AgentReply(text, invocations, result.getStopReason(), inputTokens, outputTokens);
 		}
 
-		log.debug("Agent hit the {}-step tool limit", maxSteps);
-		return new AgentReply(
-			"That turned into a lot of lookups — let's narrow it down. What's the single most important thing you want to know?",
-			invocations, StopReason.OTHER, inputTokens, outputTokens);
+		log.debug("Agent hit the {}-step tool limit, completing without tools", maxSteps);
+		LlmResult finalResult = llm.complete(new LlmRequest(system, messages, List.of()));
+		inputTokens += finalResult.getInputTokens();
+		outputTokens += finalResult.getOutputTokens();
+		String finalText = finalResult.getText();
+		if (finalText.isEmpty())
+		{
+			finalText = "tool call limit exceeded";
+		}
+		return new AgentReply(finalText, invocations, finalResult.getStopReason(), inputTokens, outputTokens);
 	}
 
 	private ToolOutcome runTool(ToolCall call)

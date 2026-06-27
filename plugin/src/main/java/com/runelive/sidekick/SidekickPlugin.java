@@ -2,6 +2,7 @@ package com.runelive.sidekick;
 
 import com.google.gson.Gson;
 import com.google.inject.Provides;
+import com.runelive.sidekick.agent.AgentReply;
 import com.runelive.sidekick.agent.AgentService;
 import com.runelive.sidekick.agent.ToolRegistry;
 import com.runelive.sidekick.agent.tools.AgentTool;
@@ -9,6 +10,8 @@ import com.runelive.sidekick.agent.tools.GrandExchangePriceTool;
 import com.runelive.sidekick.agent.tools.WikiSearchTool;
 import com.runelive.sidekick.cache.RateLimiter;
 import com.runelive.sidekick.cache.TtlCache;
+import com.runelive.sidekick.context.PlayerContext;
+import com.runelive.sidekick.context.PlayerNotFoundException;
 import com.runelive.sidekick.context.client.ClientPlayerContextSource;
 import com.runelive.sidekick.context.prices.ItemPrice;
 import com.runelive.sidekick.context.prices.PriceClient;
@@ -17,7 +20,9 @@ import com.runelive.sidekick.http.HttpJson;
 import com.runelive.sidekick.llm.AnthropicClient;
 import com.runelive.sidekick.llm.GeminiClient;
 import com.runelive.sidekick.llm.LlmClient;
+import com.runelive.sidekick.llm.LlmMessage;
 import com.runelive.sidekick.llm.LlmProvider;
+import com.runelive.sidekick.llm.Modality;
 import com.runelive.sidekick.voice.GeminiVoiceClient;
 import com.runelive.sidekick.voice.VoiceService;
 import com.runelive.sidekick.web.ChatService;
@@ -31,12 +36,18 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import javax.inject.Inject;
 import javax.swing.SwingUtilities;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.ChatMessageType;
+import net.runelite.api.events.ChatMessage;
+import net.runelite.client.chat.ChatCommandManager;
 import net.runelite.client.chat.ChatMessageManager;
+import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.eventbus.Subscribe;
@@ -75,7 +86,7 @@ public class SidekickPlugin extends Plugin
 	private static final Duration PRICE_LATEST_TTL = Duration.ofMinutes(5);
 	private static final Duration PRICE_MAPPING_TTL = Duration.ofHours(6);
 	private static final Duration WIKI_TTL = Duration.ofHours(1);
-	private static final int MAX_AGENT_STEPS = 10;
+	private static final int MAX_AGENT_STEPS = 50;
 
 	@Inject
 	private EventBus eventBus;
@@ -99,11 +110,16 @@ public class SidekickPlugin extends Plugin
 	private ChatMessageManager chatMessageManager;
 
 	@Inject
+	private ChatCommandManager chatCommandManager;
+
+	@Inject
 	private ClientToolbar clientToolbar;
 
 	@Getter
 	private ChatService chatService;
 
+	private AgentService agentService;
+	private ExecutorService queryExecutor;
 	private SidekickPanel sidekickPanel;
 	private NavigationButton navButton;
 	private PriceClient priceClient;
@@ -125,12 +141,26 @@ public class SidekickPlugin extends Plugin
 			.build();
 		clientToolbar.addNavigation(navButton);
 
+		queryExecutor = Executors.newSingleThreadExecutor(r ->
+		{
+			Thread t = new Thread(r, "sidekick-query");
+			t.setDaemon(true);
+			return t;
+		});
+		chatCommandManager.registerCommand("sk", this::handleSkCommand);
+
 		startServices();
 	}
 
 	@Override
 	protected void shutDown()
 	{
+		chatCommandManager.unregisterCommand("sk");
+		if (queryExecutor != null)
+		{
+			queryExecutor.shutdownNow();
+			queryExecutor = null;
+		}
 		stopServices();
 		clientToolbar.removeNavigation(navButton);
 		navButton = null;
@@ -194,7 +224,7 @@ public class SidekickPlugin extends Plugin
 		List<AgentTool> tools = List.of(
 			new GrandExchangePriceTool(priceClient),
 			new WikiSearchTool(wikiClient));
-		AgentService agentService = new AgentService(llm, new ToolRegistry(tools), MAX_AGENT_STEPS);
+		agentService = new AgentService(llm, new ToolRegistry(tools), MAX_AGENT_STEPS);
 
 		// Context: live client data
 		chatService = new ChatService(contextSource, agentService, null);
@@ -256,6 +286,7 @@ public class SidekickPlugin extends Plugin
 			voiceService.shutdown();
 			voiceService = null;
 		}
+		agentService = null;
 		chatService = null;
 		priceClient = null;
 		wikiClient = null;
@@ -274,6 +305,64 @@ public class SidekickPlugin extends Plugin
 			return (mainKey != null && !mainKey.trim().isEmpty()) ? mainKey.trim() : null;
 		}
 		return null;
+	}
+
+	private void handleSkCommand(ChatMessage chatMessage, String message)
+	{
+		String query = message.trim();
+		if (query.isEmpty())
+		{
+			return;
+		}
+		AgentService svc = agentService;
+		if (svc == null)
+		{
+			postSystemMessage("<col=ff0000>Sidekick not configured</col> — add an API key in the plugin settings.");
+			return;
+		}
+		postSystemMessage("Sidekick is thinking...");
+		queryExecutor.submit(() ->
+		{
+			try
+			{
+				PlayerContext context;
+				try
+				{
+					context = contextSource.fetch(null);
+				}
+				catch (PlayerNotFoundException e)
+				{
+					postSystemMessage("<col=ff0000>No player logged in</col> — cannot personalise advice.");
+					return;
+				}
+				AgentReply reply = svc.chat(
+					context, Modality.TEXT, List.of(LlmMessage.userText(query)),
+					step -> postSystemMessage("<col=888888>" + step + "</col>"));
+				final SidekickPanel capturedPanel = sidekickPanel;
+				final NavigationButton capturedNav = navButton;
+				if (capturedPanel != null)
+				{
+					capturedPanel.showResponse(query, reply.getText());
+				}
+				if (capturedNav != null)
+				{
+					SwingUtilities.invokeLater(() -> clientToolbar.openPanel(capturedNav));
+				}
+			}
+			catch (Exception e)
+			{
+				log.debug("::sk command error", e);
+				postSystemMessage("<col=ff0000>Sidekick error:</col> " + e.getMessage());
+			}
+		});
+	}
+
+	private void postSystemMessage(String message)
+	{
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.GAMEMESSAGE)
+			.runeLiteFormattedMessage("[Sidekick] " + message)
+			.build());
 	}
 
 	private static BufferedImage buildIcon()

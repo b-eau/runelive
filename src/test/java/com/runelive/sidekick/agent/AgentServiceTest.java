@@ -140,13 +140,15 @@ public class AgentServiceTest
 		FakeLlmClient llm = new FakeLlmClient()
 			.script(FakeLlmClient.toolUse("t1", "price_tool", new JsonObject()))
 			.script(FakeLlmClient.toolUse("t2", "price_tool", new JsonObject()))
-			.script(FakeLlmClient.toolUse("t3", "price_tool", new JsonObject()));
+			.script(FakeLlmClient.endTurn("Here is what I found."));
 
 		AgentService agent = new AgentService(llm, registry, 2);
 		AgentReply reply = agent.chat(context(), Modality.TEXT, List.of(LlmMessage.userText("hi")), null);
 
-		assertEquals(StopReason.OTHER, reply.getStopReason());
-		assertEquals("ran exactly maxSteps model calls", 2, llm.requests.size());
+		assertEquals(StopReason.END_TURN, reply.getStopReason());
+		assertEquals("graceful: maxSteps tool calls then one final no-tool request", 3, llm.requests.size());
+		assertTrue("final request must have no tools", llm.requests.get(2).getTools().isEmpty());
+		assertEquals("Here is what I found.", reply.getText());
 	}
 
 	@Test
