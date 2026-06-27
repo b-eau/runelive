@@ -68,7 +68,7 @@ public class GeminiClient implements LlmClient
 			.header("x-goog-api-key", apiKey)
 			.header("content-type", "application/json")
 			.header("accept", "application/json")
-			.post(RequestBody.create(gson.toJson(body), JSON_MEDIA))
+			.post(RequestBody.create(JSON_MEDIA, gson.toJson(body)))
 			.build();
 
 		try (Response response = http.newCall(httpRequest).execute())
@@ -192,7 +192,7 @@ public class GeminiClient implements LlmClient
 		JsonObject root;
 		try
 		{
-			JsonElement element = JsonParser.parseString(responseBody);
+			JsonElement element = new JsonParser().parse(responseBody);
 			if (!element.isJsonObject())
 			{
 				throw new LlmException(0, "Gemini API returned a non-object response");

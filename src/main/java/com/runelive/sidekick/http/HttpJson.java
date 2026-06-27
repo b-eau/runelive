@@ -72,7 +72,7 @@ public final class HttpJson
 			.url(url)
 			.header("User-Agent", userAgent)
 			.header("Accept", "application/json")
-			.post(RequestBody.create(gson.toJson(body), MediaTypes.JSON))
+			.post(RequestBody.create(MediaTypes.JSON, gson.toJson(body)))
 			.build();
 		JsonElement element = execute(request, url);
 		if (!element.isJsonObject())
@@ -94,7 +94,7 @@ public final class HttpJson
 			}
 			try
 			{
-				return JsonParser.parseString(body);
+				return new JsonParser().parse(body);
 			}
 			catch (JsonParseException e)
 			{

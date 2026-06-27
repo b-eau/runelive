@@ -80,7 +80,7 @@ public class AnthropicClient implements LlmClient
 			.header("content-type", "application/json")
 			.header("accept", "application/json")
 			.header("user-agent", userAgent)
-			.post(RequestBody.create(gson.toJson(body), JSON_MEDIA))
+			.post(RequestBody.create(JSON_MEDIA, gson.toJson(body)))
 			.build();
 
 		try (Response response = http.newCall(httpRequest).execute())
@@ -187,7 +187,7 @@ public class AnthropicClient implements LlmClient
 		JsonObject root;
 		try
 		{
-			JsonElement element = JsonParser.parseString(responseBody);
+			JsonElement element = new JsonParser().parse(responseBody);
 			if (!element.isJsonObject())
 			{
 				throw new LlmException(0, "Anthropic API returned a non-object response");
