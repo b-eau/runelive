@@ -37,6 +37,7 @@ import net.runelite.client.input.KeyManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.util.HotkeyListener;
+import java.util.concurrent.TimeUnit;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 
@@ -65,7 +66,7 @@ public class SidekickPlugin extends Plugin
 	private static final Duration PRICE_LATEST_TTL = Duration.ofMinutes(5);
 	private static final Duration PRICE_MAPPING_TTL = Duration.ofHours(6);
 	private static final Duration WIKI_TTL = Duration.ofHours(1);
-	private static final int MAX_AGENT_STEPS = 6;
+	private static final int MAX_AGENT_STEPS = 10;
 
 	@Inject
 	private EventBus eventBus;
@@ -177,8 +178,12 @@ public class SidekickPlugin extends Plugin
 			String voiceKey = resolveVoiceApiKey(config);
 			if (voiceKey != null)
 			{
-				GeminiVoiceClient voiceClient = new GeminiVoiceClient(
-					okHttpClient, gson,
+				// TTS responses are large; RuneLite's default timeout is too short.
+			OkHttpClient voiceHttpClient = okHttpClient.newBuilder()
+				.readTimeout(60, TimeUnit.SECONDS)
+				.build();
+			GeminiVoiceClient voiceClient = new GeminiVoiceClient(
+					voiceHttpClient, gson,
 					HttpUrl.get("https://generativelanguage.googleapis.com"),
 					voiceKey,
 					config.ttsVoice());
