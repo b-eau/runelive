@@ -20,8 +20,12 @@ public class ChatServiceTest
 {
 	private static PlayerContext contextFor(String username)
 	{
-		return new PlayerContext(username, "ironman", "main", 110, 1750, 5_000_000L,
-			20.0, 8.0, null, null, Map.of(), Map.of(), Map.of());
+		return PlayerContext.builder()
+			.username(username).accountType("ironman").build("main")
+			.combatLevel(110).totalLevel(1750).totalExperience(5_000_000L)
+			.efficientHoursPlayed(20.0).efficientHoursBossed(8.0)
+			.skills(Map.of()).bosses(Map.of()).activities(Map.of())
+			.build();
 	}
 
 	private ChatService service(FakeLlmClient llm, String defaultPlayer)

@@ -2,19 +2,23 @@ package com.runelive.sidekick.context;
 
 import java.util.List;
 import java.util.Map;
+import lombok.Builder;
 import lombok.Value;
 
 /**
  * An immutable snapshot of everything the sidekick knows about a player's account.
  *
- * <p>This is the "personalization" payload injected into the model's context. Today it is
- * populated from public community APIs (the cloud subset — skills, boss kill-counts, minigame
- * scores, account type/build, efficiency metrics, account age and recent activity). When the
- * code is restructured into a RuneLite plugin, a client-backed {@link PlayerContextSource} will
- * fill in the rest of the vision — bank contents, current location, quest log, achievement
- * diaries, daily playtime — without changing this model's consumers.
+ * <p>Fields sourced from the community cloud APIs ({@link CloudPlayerContextSource} via WiseOldMan):
+ * skills, boss kill-counts, minigame scores, account type/build, efficiency metrics, account age.
+ *
+ * <p>Fields sourced from the live RuneLite client ({@code ClientPlayerContextSource}):
+ * {@link #bank}, {@link #quests}, {@link #diaries}, {@link #currentLocation}. These are
+ * {@code null} when the cloud source is used, and populated by the plugin.
+ *
+ * <p>Use {@link PlayerContext#builder()} to construct; all nullable fields default to null.
  */
 @Value
+@Builder
 public class PlayerContext
 {
 	String username;
@@ -23,10 +27,10 @@ public class PlayerContext
 	int combatLevel;
 	int totalLevel;
 	long totalExperience;
-	double efficientHoursPlayed;  // WiseOldMan EHP
-	double efficientHoursBossed;  // WiseOldMan EHB
-	String registeredAt;   // account creation (ISO-8601, nullable), for "account lifetime"
-	String lastChangedAt;  // last detected gain (ISO-8601, nullable), a proxy for recent activity
+	double efficientHoursPlayed;  // WiseOldMan EHP (0 when not available from cloud)
+	double efficientHoursBossed;  // WiseOldMan EHB (0 when not available from cloud)
+	String registeredAt;   // account creation (ISO-8601, nullable)
+	String lastChangedAt;  // last detected gain (ISO-8601, nullable), proxy for recent activity
 
 	/** Skill name -> stat. Skill names use OSRS conventions, e.g. "attack", "slayer". */
 	Map<String, SkillStat> skills;
@@ -34,6 +38,23 @@ public class PlayerContext
 	Map<String, BossStat> bosses;
 	/** Activity/minigame name -> score, ranked entries only (clues, LMS, soul wars, ...). */
 	Map<String, ActivityStat> activities;
+
+	// ── Client-only fields (null when populated from cloud APIs) ──────────────────────────────────
+
+	/** Bank contents, sorted by quantity descending. {@code null} if the bank hasn't been opened
+	 *  this session, or if the context came from cloud APIs. */
+	List<BankItem> bank;
+
+	/** All quests and their completion state. {@code null} if from cloud APIs. */
+	List<QuestEntry> quests;
+
+	/** Achievement diary tier completion (Easy/Medium/Hard/Elite per area).
+	 *  {@code null} if from cloud APIs. */
+	List<DiaryEntry> diaries;
+
+	/** Human-readable current location, e.g. "Grand Exchange", "Slayer Tower".
+	 *  {@code null} if from cloud APIs or player location is unknown. */
+	String currentLocation;
 
 	@Value
 	public static class SkillStat
@@ -70,7 +91,7 @@ public class PlayerContext
 	/** Returns the skill stat, or {@code null} if the skill is unknown. */
 	public SkillStat skill(String name)
 	{
-		return skills.get(name.toLowerCase());
+		return skills == null ? null : skills.get(name.toLowerCase());
 	}
 
 	public int skillLevel(String name)
@@ -81,6 +102,10 @@ public class PlayerContext
 
 	public int bossKills(String name)
 	{
+		if (bosses == null)
+		{
+			return 0;
+		}
 		BossStat stat = bosses.get(name.toLowerCase());
 		return stat != null ? stat.getKills() : 0;
 	}

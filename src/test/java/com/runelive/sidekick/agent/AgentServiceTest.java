@@ -23,8 +23,12 @@ public class AgentServiceTest
 {
 	private static PlayerContext context()
 	{
-		return new PlayerContext("Zezima", "regular", "main", 100, 1500, 1_000_000L,
-			10.0, 5.0, null, null, Map.of(), Map.of(), Map.of());
+		return PlayerContext.builder()
+			.username("Zezima").accountType("regular").build("main")
+			.combatLevel(100).totalLevel(1500).totalExperience(1_000_000L)
+			.efficientHoursPlayed(10.0).efficientHoursBossed(5.0)
+			.skills(Map.of()).bosses(Map.of()).activities(Map.of())
+			.build();
 	}
 
 	/** A tool that records its last input and returns a canned answer. */
