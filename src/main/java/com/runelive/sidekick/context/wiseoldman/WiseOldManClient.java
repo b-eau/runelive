@@ -143,19 +143,20 @@ public class WiseOldManClient
 			}
 		}
 
-		return new PlayerContext(
-			displayName,
-			Json.optString(root, "type", "regular"),
-			Json.optString(root, "build", ""),
-			Json.optInt(root, "combatLevel", 0),
-			totalLevel,
-			overallExp,
-			Json.optDouble(root, "ehp", 0),
-			Json.optDouble(root, "ehb", 0),
-			Json.optString(root, "registeredAt", null),
-			Json.optString(root, "lastChangedAt", null),
-			skills,
-			bosses,
-			activities);
+		return PlayerContext.builder()
+			.username(displayName)
+			.accountType(Json.optString(root, "type", "regular"))
+			.build(Json.optString(root, "build", ""))
+			.combatLevel(Json.optInt(root, "combatLevel", 0))
+			.totalLevel(totalLevel)
+			.totalExperience(overallExp)
+			.efficientHoursPlayed(Json.optDouble(root, "ehp", 0))
+			.efficientHoursBossed(Json.optDouble(root, "ehb", 0))
+			.registeredAt(Json.optString(root, "registeredAt", null))
+			.lastChangedAt(Json.optString(root, "lastChangedAt", null))
+			.skills(skills)
+			.bosses(bosses)
+			.activities(activities)
+			.build();
 	}
 }

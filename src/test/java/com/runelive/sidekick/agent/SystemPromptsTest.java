@@ -12,11 +12,15 @@ public class SystemPromptsTest
 {
 	private static PlayerContext ironman()
 	{
-		return new PlayerContext("Zezima", "ironman", "main", 100, 1500, 1_000_000L,
-			10.0, 5.0, "2015-01-01", "2024-06-01",
-			Map.of("attack", new PlayerContext.SkillStat(99, 13_034_431L, 50)),
-			Map.of("zulrah", new PlayerContext.BossStat(1500, 1000)),
-			Map.of());
+		return PlayerContext.builder()
+			.username("Zezima").accountType("ironman").build("main")
+			.combatLevel(100).totalLevel(1500).totalExperience(1_000_000L)
+			.efficientHoursPlayed(10.0).efficientHoursBossed(5.0)
+			.registeredAt("2015-01-01").lastChangedAt("2024-06-01")
+			.skills(Map.of("attack", new PlayerContext.SkillStat(99, 13_034_431L, 50)))
+			.bosses(Map.of("zulrah", new PlayerContext.BossStat(1500, 1000)))
+			.activities(Map.of())
+			.build();
 	}
 
 	@Test

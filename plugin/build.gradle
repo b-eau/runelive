@@ -1,0 +1,46 @@
+plugins {
+	id 'java'
+}
+
+repositories {
+	maven {
+		url 'https://repo.runelite.net'
+	}
+	mavenCentral()
+}
+
+def runeLiteVersion = '1.12.31.1'
+
+dependencies {
+	// RuneLite client — compileOnly per hub-plugin convention; provided at runtime by the loader.
+	compileOnly group: 'net.runelite', name: 'client', version: runeLiteVersion
+
+	// The portable core (cache, http, context model, llm, agent) — the part that ports verbatim.
+	// At runtime in the plugin, OkHttp/Gson are provided transitively by the RuneLite client;
+	// they are declared as implementation here only for the web-devtool standalone build path.
+	implementation project(':')
+
+	compileOnly 'org.projectlombok:lombok:1.18.30'
+	annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+	testCompileOnly 'org.projectlombok:lombok:1.18.30'
+	testAnnotationProcessor 'org.projectlombok:lombok:1.18.30'
+	testImplementation group: 'net.runelite', name: 'client', version: runeLiteVersion
+	testImplementation 'junit:junit:4.13.2'
+	testImplementation 'org.mockito:mockito-core:5.2.0'
+}
+
+group = 'com.runelive'
+version = '0.1.0'
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	options.release.set(11)
+}
+
+test {
+	testLogging {
+		events 'passed', 'skipped', 'failed'
+		exceptionFormat 'full'
+	}
+}
