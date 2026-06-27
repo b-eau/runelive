@@ -83,7 +83,7 @@ public class AgentServiceTest
 			.script(FakeLlmClient.endTurn("An Abyssal whip costs about 1.6m gp."));
 
 		AgentService agent = new AgentService(llm, registry, 8);
-		AgentReply reply = agent.chat(context(), Modality.TEXT, List.of(LlmMessage.userText("how much is a whip?")));
+		AgentReply reply = agent.chat(context(), Modality.TEXT, List.of(LlmMessage.userText("how much is a whip?")), null);
 
 		assertEquals("An Abyssal whip costs about 1.6m gp.", reply.getText());
 		assertEquals(StopReason.END_TURN, reply.getStopReason());
@@ -125,7 +125,7 @@ public class AgentServiceTest
 			.script(FakeLlmClient.endTurn("Recovered."));
 
 		AgentService agent = new AgentService(llm, registry, 8);
-		AgentReply reply = agent.chat(context(), Modality.TEXT, List.of(LlmMessage.userText("hi")));
+		AgentReply reply = agent.chat(context(), Modality.TEXT, List.of(LlmMessage.userText("hi")), null);
 
 		assertEquals("Recovered.", reply.getText());
 		assertEquals(1, reply.getToolInvocations().size());
@@ -143,7 +143,7 @@ public class AgentServiceTest
 			.script(FakeLlmClient.toolUse("t3", "price_tool", new JsonObject()));
 
 		AgentService agent = new AgentService(llm, registry, 2);
-		AgentReply reply = agent.chat(context(), Modality.TEXT, List.of(LlmMessage.userText("hi")));
+		AgentReply reply = agent.chat(context(), Modality.TEXT, List.of(LlmMessage.userText("hi")), null);
 
 		assertEquals(StopReason.OTHER, reply.getStopReason());
 		assertEquals("ran exactly maxSteps model calls", 2, llm.requests.size());
@@ -154,10 +154,10 @@ public class AgentServiceTest
 	{
 		ToolRegistry registry = new ToolRegistry(List.of());
 		FakeLlmClient textLlm = new FakeLlmClient().script(FakeLlmClient.endTurn("t"));
-		new AgentService(textLlm, registry, 4).chat(context(), Modality.TEXT, List.of(LlmMessage.userText("hi")));
+		new AgentService(textLlm, registry, 4).chat(context(), Modality.TEXT, List.of(LlmMessage.userText("hi")), null);
 
 		FakeLlmClient voiceLlm = new FakeLlmClient().script(FakeLlmClient.endTurn("v"));
-		new AgentService(voiceLlm, registry, 4).chat(context(), Modality.VOICE, List.of(LlmMessage.userText("hi")));
+		new AgentService(voiceLlm, registry, 4).chat(context(), Modality.VOICE, List.of(LlmMessage.userText("hi")), null);
 
 		String textSystem = textLlm.requests.get(0).getSystem();
 		String voiceSystem = voiceLlm.requests.get(0).getSystem();

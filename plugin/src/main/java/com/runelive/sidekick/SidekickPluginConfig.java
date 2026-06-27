@@ -109,7 +109,7 @@ public interface SidekickPluginConfig extends Config
 		position = 3)
 	default String ttsVoice()
 	{
-		return "Zephyr";
+		return "Achernar";
 	}
 
 	@ConfigItem(

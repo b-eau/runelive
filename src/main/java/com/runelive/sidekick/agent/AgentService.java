@@ -16,6 +16,7 @@ import com.runelive.sidekick.llm.ToolSpec;
 import com.runelive.sidekick.llm.ToolUsePart;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -43,8 +44,11 @@ public class AgentService
 	 * @param context the player's account snapshot, injected into the system prompt
 	 * @param modality TEXT or VOICE — tunes the output style
 	 * @param history the prior conversation as user/assistant text turns, ending with the latest user turn
+	 * @param onToolCall called with a short human-readable description before each tool execution;
+	 *                   may be {@code null} if the caller doesn't need progress feedback
 	 */
-	public AgentReply chat(PlayerContext context, Modality modality, List<LlmMessage> history)
+	public AgentReply chat(PlayerContext context, Modality modality, List<LlmMessage> history,
+		Consumer<String> onToolCall)
 	{
 		String system = SystemPrompts.build(context, modality);
 		List<ToolSpec> specs = tools.specs();
@@ -77,6 +81,10 @@ public class AgentService
 				List<ToolResult> toolResults = new ArrayList<>();
 				for (ToolCall call : result.getToolCalls())
 				{
+					if (onToolCall != null)
+					{
+						onToolCall.accept(describeToolCall(call));
+					}
 					ToolOutcome outcome = runTool(call);
 					invocations.add(new ToolInvocation(call.getName(), call.getInput().toString(), outcome.output, outcome.error));
 					toolResults.add(new ToolResult(call.getId(), call.getName(), outcome.output, outcome.error));
@@ -116,6 +124,27 @@ public class AgentService
 		{
 			log.debug("Tool {} failed", call.getName(), e);
 			return new ToolOutcome("Tool error: " + e.getMessage(), true);
+		}
+	}
+
+	private static String describeToolCall(ToolCall call)
+	{
+		switch (call.getName())
+		{
+			case "search_osrs_wiki":
+			{
+				String query = call.getInput().has("query")
+					? call.getInput().get("query").getAsString() : "...";
+				return "Searching wiki: " + query;
+			}
+			case "get_grand_exchange_price":
+			{
+				String item = call.getInput().has("item_name")
+					? call.getInput().get("item_name").getAsString() : "...";
+				return "GE price: " + item;
+			}
+			default:
+				return call.getName().replace('_', ' ');
 		}
 	}
 
