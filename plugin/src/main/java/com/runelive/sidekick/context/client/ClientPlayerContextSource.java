@@ -30,7 +30,9 @@ import net.runelite.api.Skill;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.gameval.DBTableID;
 import net.runelite.api.gameval.InventoryID;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.VarPlayer;
 import net.runelite.api.vars.AccountType;
@@ -292,18 +294,45 @@ public class ClientPlayerContextSource implements PlayerContextSource
 
 	private String readSlayerTask()
 	{
-		int taskSize = client.getVarpValue(VarPlayer.SLAYER_TASK_SIZE);
-		if (taskSize <= 0)
+		int amount = client.getVarpValue(VarPlayerID.SLAYER_COUNT);
+		if (amount <= 0)
 		{
 			return null;
 		}
-		int creatureId = client.getVarpValue(VarPlayer.SLAYER_TASK_CREATURE);
-		if (creatureId <= 0)
+
+		int taskId = client.getVarpValue(VarPlayerID.SLAYER_TARGET);
+		if (taskId <= 0)
 		{
 			return null;
 		}
-		String creatureName = SlayerTaskNames.nameFor(creatureId);
-		return taskSize + " × " + creatureName;
+
+		int taskDBRow;
+		if (taskId == 98) // boss tasks use a separate sublist table
+		{
+			List<Integer> bossRows = client.getDBRowsByValue(
+				DBTableID.SlayerTaskSublist.ID,
+				DBTableID.SlayerTaskSublist.COL_TASK_SUBTABLE_ID,
+				0,
+				client.getVarbitValue(VarbitID.SLAYER_TARGET_BOSSID));
+			if (bossRows == null || bossRows.isEmpty())
+			{
+				return null;
+			}
+			taskDBRow = (Integer) client.getDBTableField(bossRows.get(0), DBTableID.SlayerTaskSublist.COL_TASK, 0)[0];
+		}
+		else
+		{
+			List<Integer> taskRows = client.getDBRowsByValue(
+				DBTableID.SlayerTask.ID, DBTableID.SlayerTask.COL_ID, 0, taskId);
+			if (taskRows == null || taskRows.isEmpty())
+			{
+				return null;
+			}
+			taskDBRow = taskRows.get(0);
+		}
+
+		String taskName = (String) client.getDBTableField(taskDBRow, DBTableID.SlayerTask.COL_NAME_UPPERCASE, 0)[0];
+		return amount + " × " + taskName;
 	}
 
 	private List<InventoryItem> readInventory()
