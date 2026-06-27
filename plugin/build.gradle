@@ -20,7 +20,9 @@ dependencies {
 	// At runtime in the plugin, OkHttp/Gson are provided transitively by the RuneLite client;
 	// they are declared as implementation here only for the web-devtool standalone build path.
 	implementation(project(':')) {
-		// RuneLite ships logback-classic; slf4j-simple from the web devtool conflicts.
+		// RuneLite ships logback-classic 1.2.x which requires slf4j-api 1.7.x.
+		// The web devtool's slf4j-api 2.0.x and slf4j-simple must not reach the plugin classpath.
+		exclude group: 'org.slf4j', module: 'slf4j-api'
 		exclude group: 'org.slf4j', module: 'slf4j-simple'
 	}
 
