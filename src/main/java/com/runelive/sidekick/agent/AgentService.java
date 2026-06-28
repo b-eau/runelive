@@ -7,7 +7,6 @@ import com.runelive.sidekick.llm.LlmClient;
 import com.runelive.sidekick.llm.LlmMessage;
 import com.runelive.sidekick.llm.LlmRequest;
 import com.runelive.sidekick.llm.LlmResult;
-import com.runelive.sidekick.llm.Modality;
 import com.runelive.sidekick.llm.StopReason;
 import com.runelive.sidekick.llm.TextPart;
 import com.runelive.sidekick.llm.ToolCall;
@@ -20,7 +19,7 @@ import java.util.function.Consumer;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Orchestrates one assistant turn: builds the personalised, modality-aware system prompt, then runs
+ * Orchestrates one assistant turn: builds the personalised system prompt, then runs
  * the agentic tool loop (model → tool calls → results → model …) until the model produces a final
  * answer. Provider details live behind {@link LlmClient}; tool execution behind {@link ToolRegistry}.
  */
@@ -42,15 +41,14 @@ public class AgentService
 	 * Produces a reply to the latest user message.
 	 *
 	 * @param context the player's account snapshot, injected into the system prompt
-	 * @param modality TEXT or VOICE — tunes the output style
 	 * @param history the prior conversation as user/assistant text turns, ending with the latest user turn
 	 * @param onToolCall called with a short human-readable description before each tool execution;
 	 *                   may be {@code null} if the caller doesn't need progress feedback
 	 */
-	public AgentReply chat(PlayerContext context, Modality modality, List<LlmMessage> history,
+	public AgentReply chat(PlayerContext context, List<LlmMessage> history,
 		Consumer<String> onToolCall)
 	{
-		String system = SystemPrompts.build(context, modality);
+		String system = SystemPrompts.build(context);
 		List<ToolSpec> specs = tools.specs();
 		List<LlmMessage> messages = new ArrayList<>(history);
 		List<ToolInvocation> invocations = new ArrayList<>();

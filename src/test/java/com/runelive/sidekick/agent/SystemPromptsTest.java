@@ -4,7 +4,6 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import com.runelive.sidekick.context.PlayerContext;
-import com.runelive.sidekick.llm.Modality;
 import java.util.Map;
 import org.junit.Test;
 
@@ -26,7 +25,7 @@ public class SystemPromptsTest
 	@Test
 	public void embedsPersonaAndAccountContext()
 	{
-		String prompt = SystemPrompts.build(ironman(), Modality.TEXT);
+		String prompt = SystemPrompts.build(ironman());
 		assertTrue(prompt.contains("Sidekick"));
 		assertTrue(prompt.contains("PLAYER ACCOUNT SNAPSHOT"));
 		assertTrue(prompt.contains("Zezima"));
@@ -36,20 +35,10 @@ public class SystemPromptsTest
 	}
 
 	@Test
-	public void textModeAllowsFormatting()
+	public void includesOutputStyleRules()
 	{
-		String prompt = SystemPrompts.build(ironman(), Modality.TEXT);
-		assertTrue(prompt.contains("TEXT CHAT"));
+		String prompt = SystemPrompts.build(ironman());
+		assertTrue(prompt.contains("OUTPUT STYLE"));
 		assertFalse(prompt.contains("READ ALOUD"));
-	}
-
-	@Test
-	public void voiceModeForbidsMarkdownAndUrls()
-	{
-		String prompt = SystemPrompts.build(ironman(), Modality.VOICE);
-		assertTrue(prompt.contains("VOICE CHAT"));
-		assertTrue(prompt.contains("READ ALOUD"));
-		assertTrue(prompt.toLowerCase().contains("no markdown"));
-		assertTrue(prompt.toLowerCase().contains("url"));
 	}
 }

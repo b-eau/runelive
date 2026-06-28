@@ -7,7 +7,6 @@ import com.runelive.sidekick.context.PlayerContext;
 import com.runelive.sidekick.context.PlayerContextSource;
 import com.runelive.sidekick.context.PlayerNotFoundException;
 import com.runelive.sidekick.llm.LlmMessage;
-import com.runelive.sidekick.llm.Modality;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -157,7 +156,7 @@ public class VoiceService
 			}
 
 			AgentReply reply = agentService.chat(
-				context, Modality.VOICE, List.of(LlmMessage.userText(text)),
+				context, List.of(LlmMessage.userText(text)),
 				step -> postMessage("<col=888888>" + step + "</col>"));
 
 			panel.showResponse(text, reply.getText());
