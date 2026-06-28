@@ -57,4 +57,15 @@ public class SystemPromptsTest
 		assertFalse(SystemPrompts.build(ironman(), null).contains("RECENT CONVERSATIONS"));
 		assertFalse(SystemPrompts.build(ironman(), "   ").contains("RECENT CONVERSATIONS"));
 	}
+
+	@Test
+	public void emphasisesWholeGameProgressionNotJustSlayer()
+	{
+		String prompt = SystemPrompts.build(ironman());
+		assertTrue(prompt.contains("ACCOUNT PROGRESSION"));
+		assertTrue("explicitly mentions Combat Achievements", prompt.contains("Combat Achievement"));
+		assertTrue("explicitly mentions the collection log", prompt.contains("collection log"));
+		assertTrue("tells the model not to default to Slayer",
+			prompt.contains("do not default every answer to Slayer"));
+	}
 }

@@ -96,6 +96,19 @@ public class PlayerContext
 	 *  {@code null} if from cloud APIs. */
 	Boolean inInstance;
 
+	// ── Long-term progression (client only; null when from cloud APIs) ────────────────────────────
+
+	/** Combat Achievement points earned. {@code null} if from cloud APIs. */
+	Integer combatTaskPoints;
+	/** Combat Achievement tier → status ("complete" / "in progress" / "not started"), in tier order
+	 *  (Easy … Grandmaster). {@code null} if from cloud APIs. */
+	Map<String, String> combatTaskTiers;
+	/** Unique collection-log items obtained, known once the collection log has been opened this
+	 *  session. {@code null} if unknown or from cloud APIs. */
+	Integer collectionLogObtained;
+	/** Total collection-log slots. {@code null} if unknown or from cloud APIs. */
+	Integer collectionLogTotal;
+
 	@Value
 	public static class SkillStat
 	{

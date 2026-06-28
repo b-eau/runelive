@@ -127,6 +127,10 @@ final class PlayerContextFormatter
 		// Achievement diaries (client only)
 		appendDiaries(sb, c);
 
+		// Combat Achievements & collection log (client only)
+		appendCombatTasks(sb, c);
+		appendCollectionLog(sb, c);
+
 		// Bank summary (client only)
 		appendBank(sb, c);
 
@@ -345,7 +349,7 @@ final class PlayerContextFormatter
 		{
 			return;
 		}
-		sb.append("\nACHIEVEMENT DIARIES:\n");
+		sb.append("\nACHIEVEMENT DIARIES (done / remaining):\n");
 		// Group by area for compact display
 		Map<String, List<DiaryEntry>> byArea = c.getDiaries().stream()
 			.collect(Collectors.groupingBy(DiaryEntry::getArea,
@@ -353,18 +357,66 @@ final class PlayerContextFormatter
 		for (Map.Entry<String, List<DiaryEntry>> entry : byArea.entrySet())
 		{
 			StringJoiner completed = new StringJoiner(", ");
+			StringJoiner remaining = new StringJoiner(", ");
 			for (DiaryEntry d : entry.getValue())
 			{
 				if (d.isComplete())
 				{
 					completed.add(d.getTier());
 				}
+				else
+				{
+					remaining.add(d.getTier());
+				}
 			}
-			String completedStr = completed.toString();
 			sb.append("- ").append(entry.getKey()).append(": ");
-			sb.append(completedStr.isEmpty() ? "none" : completedStr);
+			if (remaining.length() == 0)
+			{
+				sb.append("all complete");
+			}
+			else if (completed.length() == 0)
+			{
+				sb.append("none done (").append(remaining).append(" remaining)");
+			}
+			else
+			{
+				sb.append(completed).append(" done; ").append(remaining).append(" remaining");
+			}
 			sb.append('\n');
 		}
+	}
+
+	private static void appendCombatTasks(StringBuilder sb, PlayerContext c)
+	{
+		Integer points = c.getCombatTaskPoints();
+		Map<String, String> tiers = c.getCombatTaskTiers();
+		if (points == null && (tiers == null || tiers.isEmpty()))
+		{
+			return;
+		}
+		sb.append("\nCOMBAT ACHIEVEMENTS:\n");
+		sb.append("- Points: ").append(points == null ? 0 : points);
+		if (tiers != null && !tiers.isEmpty())
+		{
+			sb.append(" | Tiers: ");
+			StringJoiner tierLine = new StringJoiner(", ");
+			for (Map.Entry<String, String> e : tiers.entrySet())
+			{
+				tierLine.add(e.getKey() + " " + e.getValue());
+			}
+			sb.append(tierLine);
+		}
+		sb.append('\n');
+	}
+
+	private static void appendCollectionLog(StringBuilder sb, PlayerContext c)
+	{
+		if (c.getCollectionLogObtained() == null || c.getCollectionLogTotal() == null)
+		{
+			return;
+		}
+		sb.append("\nCOLLECTION LOG: ").append(c.getCollectionLogObtained())
+			.append(" / ").append(c.getCollectionLogTotal()).append(" unique items\n");
 	}
 
 	private static void appendBank(StringBuilder sb, PlayerContext c)
