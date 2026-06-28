@@ -14,9 +14,24 @@ public final class SystemPrompts
 
 	public static String build(PlayerContext context)
 	{
+		return build(context, null);
+	}
+
+	/**
+	 * Builds the system prompt, optionally embedding a short memory block summarising the player's
+	 * recent conversations so the assistant stays coherent across separate invocations.
+	 *
+	 * @param memoryBlock concise summaries of recent conversations, or {@code null}/blank for none
+	 */
+	public static String build(PlayerContext context, String memoryBlock)
+	{
 		StringBuilder sb = new StringBuilder();
 		sb.append(PERSONA).append("\n\n");
 		sb.append(context.toContextBlock()).append('\n');
+		if (memoryBlock != null && !memoryBlock.trim().isEmpty())
+		{
+			sb.append(memoryBlock.trim()).append("\n\n");
+		}
 		sb.append(GROUNDING).append("\n\n");
 		sb.append(OUTPUT_RULES);
 		return sb.toString();

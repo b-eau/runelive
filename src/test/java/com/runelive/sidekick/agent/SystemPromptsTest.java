@@ -41,4 +41,20 @@ public class SystemPromptsTest
 		assertTrue(prompt.contains("OUTPUT STYLE"));
 		assertFalse(prompt.contains("READ ALOUD"));
 	}
+
+	@Test
+	public void embedsMemoryBlockWhenProvided()
+	{
+		String memory = "RECENT CONVERSATIONS WITH THIS PLAYER:\n- [abc123] \"How do I start Zulrah?\" — 2 days ago";
+		String prompt = SystemPrompts.build(ironman(), memory);
+		assertTrue(prompt.contains("RECENT CONVERSATIONS WITH THIS PLAYER"));
+		assertTrue(prompt.contains("How do I start Zulrah?"));
+	}
+
+	@Test
+	public void omitsMemoryBlockWhenBlank()
+	{
+		assertFalse(SystemPrompts.build(ironman(), null).contains("RECENT CONVERSATIONS"));
+		assertFalse(SystemPrompts.build(ironman(), "   ").contains("RECENT CONVERSATIONS"));
+	}
 }

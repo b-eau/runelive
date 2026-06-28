@@ -24,12 +24,12 @@ public interface SidekickPluginConfig extends Config
 	@ConfigItem(
 		keyName = "provider",
 		name = "AI Provider",
-		description = "Which AI provider to use (anthropic or gemini).",
+		description = "Which AI provider powers the sidekick.",
 		section = connectionSection,
 		position = 1)
-	default String provider()
+	default LlmProviderOption provider()
 	{
-		return "gemini";
+		return LlmProviderOption.GEMINI;
 	}
 
 	@ConfigItem(
@@ -47,7 +47,8 @@ public interface SidekickPluginConfig extends Config
 	@ConfigItem(
 		keyName = "model",
 		name = "Model",
-		description = "Model name. Leave blank for the provider default (gemini-3.5-flash / claude-opus-4-8).",
+		description = "Model name. Leave blank to use the selected provider's default "
+			+ "(gemini-2.5-flash / claude-opus-4-8 / grok-4-fast-reasoning).",
 		section = connectionSection,
 		position = 3)
 	default String model()
@@ -71,7 +72,8 @@ public interface SidekickPluginConfig extends Config
 	@ConfigItem(
 		keyName = "enableVoice",
 		name = "Enable voice input",
-		description = "Hold the push-to-talk key to speak your question. Requires a Gemini API key.",
+		description = "Hold the push-to-talk key to speak your question. Transcription uses Gemini, so a "
+			+ "Gemini API key is required (reused automatically when your AI Provider is Gemini).",
 		section = voiceSection,
 		position = 0)
 	default boolean enableVoice()
@@ -93,7 +95,8 @@ public interface SidekickPluginConfig extends Config
 	@ConfigItem(
 		keyName = "voiceApiKey",
 		name = "Voice API key (Gemini)",
-		description = "Gemini key for voice. Leave blank to reuse the main key when provider = gemini.",
+		description = "Only needed when your AI Provider is NOT Gemini. Leave blank to reuse your main "
+			+ "API key when the provider is Gemini.",
 		secret = true,
 		section = voiceSection,
 		position = 2)
