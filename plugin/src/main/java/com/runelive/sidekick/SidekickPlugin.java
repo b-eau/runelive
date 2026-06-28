@@ -12,10 +12,12 @@ import com.runelive.sidekick.cache.RateLimiter;
 import com.runelive.sidekick.cache.TtlCache;
 import com.runelive.sidekick.context.PlayerContext;
 import com.runelive.sidekick.context.PlayerNotFoundException;
+import com.runelive.sidekick.context.CloudPlayerContextSource;
 import com.runelive.sidekick.context.client.ClientPlayerContextSource;
 import com.runelive.sidekick.context.prices.ItemPrice;
 import com.runelive.sidekick.context.prices.PriceClient;
 import com.runelive.sidekick.context.wiki.WikiClient;
+import com.runelive.sidekick.context.wiseoldman.WiseOldManClient;
 import com.runelive.sidekick.conversation.Conversation;
 import com.runelive.sidekick.conversation.ConversationManager;
 import com.runelive.sidekick.conversation.ConversationStore;
@@ -27,6 +29,7 @@ import com.runelive.sidekick.llm.LlmClient;
 import com.runelive.sidekick.llm.LlmMessage;
 import com.runelive.sidekick.llm.LlmProvider;
 import com.runelive.sidekick.llm.XaiClient;
+import com.runelive.sidekick.tools.HiscoresLookupTool;
 import com.runelive.sidekick.voice.GeminiVoiceClient;
 import com.runelive.sidekick.voice.VoiceService;
 import com.runelive.sidekick.web.ChatService;
@@ -95,6 +98,7 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 	private static final Duration PRICE_LATEST_TTL = Duration.ofMinutes(5);
 	private static final Duration PRICE_MAPPING_TTL = Duration.ofHours(6);
 	private static final Duration WIKI_TTL = Duration.ofHours(1);
+	private static final Duration HISCORES_TTL = Duration.ofMinutes(10);
 	private static final int MAX_AGENT_STEPS = 50;
 
 	@Inject
@@ -432,14 +436,25 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 			new RateLimiter(5, 1, Duration.ofSeconds(2), clock),
 			new TtlCache<>(WIKI_TTL, clock));
 
+		// Hiscores (WiseOldMan) — boss kill-counts and clue/minigame scores the live client cannot
+		// see. Cached per-RSN so a chatty conversation reuses one upstream fetch.
+		CloudPlayerContextSource hiscoresSource = new CloudPlayerContextSource(
+			new WiseOldManClient(
+				httpJson,
+				HttpUrl.get("https://api.wiseoldman.net/v2"),
+				new RateLimiter(5, 1, Duration.ofSeconds(2), clock)),
+			new TtlCache<>(HISCORES_TTL, clock));
+
 		// LLM
 		LlmClient llm = buildLlmClient(config, okHttpClient, gson);
 
-		// Agent — the recall tool reads from the long-lived conversation manager.
+		// Agent — the recall tool reads from the long-lived conversation manager; the hiscores tool
+		// looks the player up on WiseOldMan on demand.
 		List<AgentTool> tools = List.of(
 			new GrandExchangePriceTool(priceClient),
 			new WikiSearchTool(wikiClient),
-			new RecallConversationsTool(conversationManager));
+			new RecallConversationsTool(conversationManager),
+			new HiscoresLookupTool(hiscoresSource, this::currentUsername));
 		agentService = new AgentService(llm, new ToolRegistry(tools), MAX_AGENT_STEPS);
 
 		// Context: live client data
