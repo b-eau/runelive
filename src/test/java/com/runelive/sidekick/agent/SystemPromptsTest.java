@@ -43,6 +43,18 @@ public class SystemPromptsTest
 	}
 
 	@Test
+	public void asksForRichComparativeGearAwareAnswers()
+	{
+		String prompt = SystemPrompts.build(ironman());
+		assertTrue("compares options with tradeoffs", prompt.contains("tradeoffs for EACH option"));
+		assertTrue("quantifies xp rate", prompt.contains("xp/hr"));
+		assertTrue("quantifies cost/profit", prompt.contains("gp/hr"));
+		assertTrue("accounts for risk / AFK-ness", prompt.contains("AFK-ness"));
+		assertTrue("leverages the player's owned gear", prompt.contains("equipment, inventory and bank"));
+		assertTrue("flags first-time setup", prompt.contains("first-time essentials"));
+	}
+
+	@Test
 	public void embedsMemoryBlockWhenProvided()
 	{
 		String memory = "RECENT CONVERSATIONS WITH THIS PLAYER:\n- [abc123] \"How do I start Zulrah?\" — 2 days ago";
