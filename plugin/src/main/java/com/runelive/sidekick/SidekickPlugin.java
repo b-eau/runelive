@@ -22,7 +22,6 @@ import com.runelive.sidekick.llm.GeminiClient;
 import com.runelive.sidekick.llm.LlmClient;
 import com.runelive.sidekick.llm.LlmMessage;
 import com.runelive.sidekick.llm.LlmProvider;
-import com.runelive.sidekick.llm.Modality;
 import com.runelive.sidekick.voice.GeminiVoiceClient;
 import com.runelive.sidekick.voice.VoiceService;
 import com.runelive.sidekick.web.ChatService;
@@ -336,7 +335,7 @@ public class SidekickPlugin extends Plugin
 					return;
 				}
 				AgentReply reply = svc.chat(
-					context, Modality.TEXT, List.of(LlmMessage.userText(query)),
+					context, List.of(LlmMessage.userText(query)),
 					step -> postSystemMessage("<col=888888>" + step + "</col>"));
 				final SidekickPanel capturedPanel = sidekickPanel;
 				final NavigationButton capturedNav = navButton;

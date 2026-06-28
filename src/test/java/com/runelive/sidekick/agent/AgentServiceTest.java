@@ -9,7 +9,6 @@ import com.runelive.sidekick.agent.tools.AgentTool;
 import com.runelive.sidekick.context.PlayerContext;
 import com.runelive.sidekick.llm.LlmMessage;
 import com.runelive.sidekick.llm.LlmRequest;
-import com.runelive.sidekick.llm.Modality;
 import com.runelive.sidekick.llm.Role;
 import com.runelive.sidekick.llm.StopReason;
 import com.runelive.sidekick.llm.ToolResultPart;
@@ -83,7 +82,7 @@ public class AgentServiceTest
 			.script(FakeLlmClient.endTurn("An Abyssal whip costs about 1.6m gp."));
 
 		AgentService agent = new AgentService(llm, registry, 8);
-		AgentReply reply = agent.chat(context(), Modality.TEXT, List.of(LlmMessage.userText("how much is a whip?")), null);
+		AgentReply reply = agent.chat(context(), List.of(LlmMessage.userText("how much is a whip?")), null);
 
 		assertEquals("An Abyssal whip costs about 1.6m gp.", reply.getText());
 		assertEquals(StopReason.END_TURN, reply.getStopReason());
@@ -125,7 +124,7 @@ public class AgentServiceTest
 			.script(FakeLlmClient.endTurn("Recovered."));
 
 		AgentService agent = new AgentService(llm, registry, 8);
-		AgentReply reply = agent.chat(context(), Modality.TEXT, List.of(LlmMessage.userText("hi")), null);
+		AgentReply reply = agent.chat(context(), List.of(LlmMessage.userText("hi")), null);
 
 		assertEquals("Recovered.", reply.getText());
 		assertEquals(1, reply.getToolInvocations().size());
@@ -143,7 +142,7 @@ public class AgentServiceTest
 			.script(FakeLlmClient.endTurn("Here is what I found."));
 
 		AgentService agent = new AgentService(llm, registry, 2);
-		AgentReply reply = agent.chat(context(), Modality.TEXT, List.of(LlmMessage.userText("hi")), null);
+		AgentReply reply = agent.chat(context(), List.of(LlmMessage.userText("hi")), null);
 
 		assertEquals(StopReason.END_TURN, reply.getStopReason());
 		assertEquals("graceful: maxSteps tool calls then one final no-tool request", 3, llm.requests.size());
@@ -151,21 +150,4 @@ public class AgentServiceTest
 		assertEquals("Here is what I found.", reply.getText());
 	}
 
-	@Test
-	public void textAndVoiceProduceDifferentSystemPrompts()
-	{
-		ToolRegistry registry = new ToolRegistry(List.of());
-		FakeLlmClient textLlm = new FakeLlmClient().script(FakeLlmClient.endTurn("t"));
-		new AgentService(textLlm, registry, 4).chat(context(), Modality.TEXT, List.of(LlmMessage.userText("hi")), null);
-
-		FakeLlmClient voiceLlm = new FakeLlmClient().script(FakeLlmClient.endTurn("v"));
-		new AgentService(voiceLlm, registry, 4).chat(context(), Modality.VOICE, List.of(LlmMessage.userText("hi")), null);
-
-		String textSystem = textLlm.requests.get(0).getSystem();
-		String voiceSystem = voiceLlm.requests.get(0).getSystem();
-		assertTrue(textSystem.contains("TEXT CHAT"));
-		assertTrue(voiceSystem.contains("VOICE CHAT"));
-		assertFalse(textSystem.contains("READ ALOUD"));
-		assertTrue(voiceSystem.contains("READ ALOUD"));
-	}
 }

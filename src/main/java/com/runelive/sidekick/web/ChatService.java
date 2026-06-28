@@ -6,7 +6,6 @@ import com.runelive.sidekick.agent.ToolInvocation;
 import com.runelive.sidekick.context.PlayerContext;
 import com.runelive.sidekick.context.PlayerContextSource;
 import com.runelive.sidekick.llm.LlmMessage;
-import com.runelive.sidekick.llm.Modality;
 import com.runelive.sidekick.llm.Role;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,11 +46,10 @@ public class ChatService
 			return ChatDtos.ChatResponse.error("The conversation must end with a user message.");
 		}
 
-		Modality modality = Modality.fromString(request.modality);
 		PlayerContext context = contextSource.fetch(player);
-		AgentReply reply = agentService.chat(context, modality, history, null);
+		AgentReply reply = agentService.chat(context, history, null);
 
-		return toResponse(reply, modality, context);
+		return toResponse(reply, context);
 	}
 
 	private static List<LlmMessage> toHistory(List<ChatDtos.Turn> turns)
@@ -75,11 +73,11 @@ public class ChatService
 		return history;
 	}
 
-	private ChatDtos.ChatResponse toResponse(AgentReply reply, Modality modality, PlayerContext context)
+	private ChatDtos.ChatResponse toResponse(AgentReply reply, PlayerContext context)
 	{
 		ChatDtos.ChatResponse response = new ChatDtos.ChatResponse();
 		response.reply = reply.getText();
-		response.modality = modality == Modality.VOICE ? "voice" : "text";
+		response.modality = "text";
 		response.player = context.getUsername();
 
 		ChatDtos.ContextSummary summary = new ChatDtos.ContextSummary();
