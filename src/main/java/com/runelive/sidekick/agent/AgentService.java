@@ -48,7 +48,19 @@ public class AgentService
 	public AgentReply chat(PlayerContext context, List<LlmMessage> history,
 		Consumer<String> onToolCall)
 	{
-		String system = SystemPrompts.build(context);
+		return chat(context, history, null, onToolCall);
+	}
+
+	/**
+	 * Produces a reply, embedding a memory block of recent-conversation summaries into the system
+	 * prompt so the assistant stays coherent across separate invocations.
+	 *
+	 * @param memory concise summaries of the player's recent conversations, or {@code null} for none
+	 */
+	public AgentReply chat(PlayerContext context, List<LlmMessage> history, String memory,
+		Consumer<String> onToolCall)
+	{
+		String system = SystemPrompts.build(context, memory);
 		List<ToolSpec> specs = tools.specs();
 		List<LlmMessage> messages = new ArrayList<>(history);
 		List<ToolInvocation> invocations = new ArrayList<>();

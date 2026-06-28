@@ -16,12 +16,17 @@ import com.runelive.sidekick.context.client.ClientPlayerContextSource;
 import com.runelive.sidekick.context.prices.ItemPrice;
 import com.runelive.sidekick.context.prices.PriceClient;
 import com.runelive.sidekick.context.wiki.WikiClient;
+import com.runelive.sidekick.conversation.Conversation;
+import com.runelive.sidekick.conversation.ConversationManager;
+import com.runelive.sidekick.conversation.ConversationStore;
+import com.runelive.sidekick.conversation.RecallConversationsTool;
 import com.runelive.sidekick.http.HttpJson;
 import com.runelive.sidekick.llm.AnthropicClient;
 import com.runelive.sidekick.llm.GeminiClient;
 import com.runelive.sidekick.llm.LlmClient;
 import com.runelive.sidekick.llm.LlmMessage;
 import com.runelive.sidekick.llm.LlmProvider;
+import com.runelive.sidekick.llm.XaiClient;
 import com.runelive.sidekick.voice.GeminiVoiceClient;
 import com.runelive.sidekick.voice.VoiceService;
 import com.runelive.sidekick.web.ChatService;
@@ -65,8 +70,13 @@ import okhttp3.OkHttpClient;
  *
  * <p>It mirrors the structure of {@link com.runelive.sidekick.Sidekick} (the web devtool
  * composition root), swapping {@code CloudPlayerContextSource} → {@link ClientPlayerContextSource}
- * and dropping the web server. Everything else — caches, rate limiters, LLM client, agent loop —
- * is identical and re-used verbatim.
+ * and dropping the web server. The portable core — caches, rate limiters, LLM client, agent loop —
+ * is re-used verbatim.
+ *
+ * <p>Questions reach the agent three ways: the {@code ::sk} chat command, push-to-talk voice, and
+ * the sidebar panel's follow-up box. All three funnel through {@link #submitQuery(String)}, which
+ * appends to the active {@link Conversation}, runs the agent with the running history plus a memory
+ * block of past conversations, and re-renders the panel.
  *
  * <p>The plugin is disabled by default. When enabled, it contacts the configured AI provider's
  * servers using the player's API key. Services are (re)started whenever the config changes so the
@@ -79,7 +89,7 @@ import okhttp3.OkHttpClient;
 	description = "Personalised AI chat sidekick — talks to an external AI provider to give advice tailored to your account. Requires an API key for the chosen provider.",
 	tags = {"ai", "chat", "assistant", "advice", "helper"},
 	enabledByDefault = false)
-public class SidekickPlugin extends Plugin
+public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 {
 	// Cache TTLs — identical to the web devtool for consistency.
 	private static final Duration PRICE_LATEST_TTL = Duration.ofMinutes(5);
@@ -126,12 +136,21 @@ public class SidekickPlugin extends Plugin
 	private VoiceService voiceService;
 	private HotkeyListener hotkeyListener;
 
+	// Conversation history lives independently of the API key, so it survives config changes and is
+	// browsable even before a key is configured.
+	private ConversationStore conversationStore;
+	private ConversationManager conversationManager;
+
 	@Override
 	protected void startUp()
 	{
 		eventBus.register(contextSource);
 
+		conversationStore = new ConversationStore(gson);
+		conversationManager = new ConversationManager(conversationStore);
+
 		sidekickPanel = new SidekickPanel();
+		sidekickPanel.setListener(this);
 		navButton = NavigationButton.builder()
 			.tooltip("OSRS Sidekick")
 			.icon(buildIcon())
@@ -164,6 +183,8 @@ public class SidekickPlugin extends Plugin
 		clientToolbar.removeNavigation(navButton);
 		navButton = null;
 		sidekickPanel = null;
+		conversationManager = null;
+		conversationStore = null;
 		eventBus.unregister(contextSource);
 	}
 
@@ -185,7 +206,202 @@ public class SidekickPlugin extends Plugin
 		return configManager.getConfig(SidekickPluginConfig.class);
 	}
 
-	// ── Private ──────────────────────────────────────────────────────────────────────────────────
+	// ── Panel listener ───────────────────────────────────────────────────────────────────────────
+
+	/** A follow-up typed into the panel. The panel has already shown the pending state. */
+	@Override
+	public void onSend(String text)
+	{
+		submitQuery(text.trim());
+	}
+
+	@Override
+	public void onNewConversation()
+	{
+		ConversationManager manager = conversationManager;
+		if (manager != null)
+		{
+			manager.startNew();
+		}
+	}
+
+	@Override
+	public void onHistoryRequested()
+	{
+		ExecutorService exec = queryExecutor;
+		ConversationManager manager = conversationManager;
+		if (exec == null || manager == null)
+		{
+			return;
+		}
+		exec.submit(() ->
+		{
+			String username = currentUsername();
+			List<Conversation> recent = username == null ? List.of() : manager.recent(username);
+			SidekickPanel panel = sidekickPanel;
+			if (panel != null)
+			{
+				panel.showHistory(recent);
+			}
+		});
+	}
+
+	@Override
+	public void onConversationSelected(String id)
+	{
+		ExecutorService exec = queryExecutor;
+		ConversationManager manager = conversationManager;
+		if (exec == null || manager == null)
+		{
+			return;
+		}
+		exec.submit(() ->
+		{
+			String username = currentUsername();
+			Conversation conversation = username == null ? null : manager.load(username, id);
+			if (conversation == null)
+			{
+				return;
+			}
+			manager.setActive(conversation);
+			SidekickPanel panel = sidekickPanel;
+			if (panel != null)
+			{
+				panel.showConversation(conversation);
+			}
+		});
+	}
+
+	// ── Query entry points ───────────────────────────────────────────────────────────────────────
+
+	private void handleSkCommand(ChatMessage chatMessage, String message)
+	{
+		ask(message == null ? "" : message.trim());
+	}
+
+	/** External trigger (chat command / voice): show the pending state, focus the panel, then run. */
+	private void ask(String query)
+	{
+		if (query.isEmpty())
+		{
+			return;
+		}
+		if (agentService == null)
+		{
+			postSystemMessage("<col=ff0000>Sidekick not configured</col> — add an API key in the plugin settings.");
+			return;
+		}
+		SidekickPanel panel = sidekickPanel;
+		if (panel != null)
+		{
+			panel.showPending(query);
+		}
+		openPanel();
+		submitQuery(query);
+	}
+
+	/** The shared worker: append the turn, run the agent with history + memory, re-render the panel. */
+	private void submitQuery(String query)
+	{
+		if (query.isEmpty())
+		{
+			return;
+		}
+		AgentService svc = agentService;
+		ExecutorService exec = queryExecutor;
+		ConversationManager manager = conversationManager;
+		if (svc == null || exec == null || manager == null)
+		{
+			SidekickPanel panel = sidekickPanel;
+			if (panel != null)
+			{
+				panel.showError("Sidekick isn't configured — add an API key in the plugin settings.");
+			}
+			return;
+		}
+		exec.submit(() ->
+		{
+			try
+			{
+				PlayerContext context;
+				try
+				{
+					context = contextSource.fetch(null);
+				}
+				catch (PlayerNotFoundException e)
+				{
+					SidekickPanel panel = sidekickPanel;
+					if (panel != null)
+					{
+						panel.showError("No player logged in — log in so I can tailor advice to your account.");
+					}
+					return;
+				}
+
+				String username = context.getUsername();
+				manager.recordUser(username, query);
+				List<LlmMessage> history = manager.history();
+				String memory = manager.memoryBlock(username);
+
+				AgentReply reply = svc.chat(context, history, memory,
+					step -> postSystemMessage("<col=888888>" + step + "</col>"));
+
+				manager.recordAssistant(reply.getText());
+
+				SidekickPanel panel = sidekickPanel;
+				if (panel != null)
+				{
+					panel.showConversation(manager.current());
+				}
+			}
+			catch (Exception e)
+			{
+				log.debug("Sidekick query error", e);
+				SidekickPanel panel = sidekickPanel;
+				if (panel != null)
+				{
+					panel.showError("Sidekick error: " + e.getMessage());
+				}
+			}
+		});
+	}
+
+	/** Called by the voice pipeline once it has transcribed the player's speech. */
+	private void onVoiceTranscript(String text)
+	{
+		ask(text == null ? "" : text.trim());
+	}
+
+	private String currentUsername()
+	{
+		try
+		{
+			return contextSource.fetch(null).getUsername();
+		}
+		catch (PlayerNotFoundException e)
+		{
+			return null;
+		}
+	}
+
+	private void openPanel()
+	{
+		final NavigationButton nav = navButton;
+		if (nav != null)
+		{
+			SwingUtilities.invokeLater(() -> clientToolbar.openPanel(nav));
+		}
+	}
+
+	private void postSystemMessage(String message)
+	{
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.GAMEMESSAGE)
+			.runeLiteFormattedMessage("[Sidekick] " + message)
+			.build());
+	}
+
+	// ── Service lifecycle ──────────────────────────────────────────────────────────────────────────
 
 	private void startServices()
 	{
@@ -219,16 +435,17 @@ public class SidekickPlugin extends Plugin
 		// LLM
 		LlmClient llm = buildLlmClient(config, okHttpClient, gson);
 
-		// Agent
+		// Agent — the recall tool reads from the long-lived conversation manager.
 		List<AgentTool> tools = List.of(
 			new GrandExchangePriceTool(priceClient),
-			new WikiSearchTool(wikiClient));
+			new WikiSearchTool(wikiClient),
+			new RecallConversationsTool(conversationManager));
 		agentService = new AgentService(llm, new ToolRegistry(tools), MAX_AGENT_STEPS);
 
 		// Context: live client data
 		chatService = new ChatService(contextSource, agentService, null);
 
-		// Voice (optional — requires Gemini key regardless of main LLM provider)
+		// Voice (optional — transcription requires a Gemini key regardless of the main LLM provider)
 		if (config.enableVoice())
 		{
 			String voiceKey = resolveVoiceApiKey(config);
@@ -241,12 +458,7 @@ public class SidekickPlugin extends Plugin
 					voiceHttpClient, gson,
 					HttpUrl.get("https://generativelanguage.googleapis.com"),
 					voiceKey);
-				final SidekickPanel capturedPanel = sidekickPanel;
-				final NavigationButton capturedNav = navButton;
-				voiceService = new VoiceService(
-					voiceClient, agentService, contextSource, chatMessageManager,
-					capturedPanel,
-					() -> SwingUtilities.invokeLater(() -> clientToolbar.openPanel(capturedNav)));
+				voiceService = new VoiceService(voiceClient, chatMessageManager, this::onVoiceTranscript);
 				hotkeyListener = new HotkeyListener(() -> config.voiceHotkey())
 				{
 					@Override
@@ -298,70 +510,14 @@ public class SidekickPlugin extends Plugin
 		{
 			return voiceKey.trim();
 		}
-		if (LlmProvider.fromString(config.provider()) == LlmProvider.GEMINI)
+		// When the main provider is Gemini, the main key already is a Gemini key — reuse it so the
+		// user never has to enter the same key twice.
+		if (config.provider().supportsVoice())
 		{
 			String mainKey = config.apiKey();
 			return (mainKey != null && !mainKey.trim().isEmpty()) ? mainKey.trim() : null;
 		}
 		return null;
-	}
-
-	private void handleSkCommand(ChatMessage chatMessage, String message)
-	{
-		String query = message.trim();
-		if (query.isEmpty())
-		{
-			return;
-		}
-		AgentService svc = agentService;
-		if (svc == null)
-		{
-			postSystemMessage("<col=ff0000>Sidekick not configured</col> — add an API key in the plugin settings.");
-			return;
-		}
-		postSystemMessage("Sidekick is thinking...");
-		queryExecutor.submit(() ->
-		{
-			try
-			{
-				PlayerContext context;
-				try
-				{
-					context = contextSource.fetch(null);
-				}
-				catch (PlayerNotFoundException e)
-				{
-					postSystemMessage("<col=ff0000>No player logged in</col> — cannot personalise advice.");
-					return;
-				}
-				AgentReply reply = svc.chat(
-					context, List.of(LlmMessage.userText(query)),
-					step -> postSystemMessage("<col=888888>" + step + "</col>"));
-				final SidekickPanel capturedPanel = sidekickPanel;
-				final NavigationButton capturedNav = navButton;
-				if (capturedPanel != null)
-				{
-					capturedPanel.showResponse(query, reply.getText());
-				}
-				if (capturedNav != null)
-				{
-					SwingUtilities.invokeLater(() -> clientToolbar.openPanel(capturedNav));
-				}
-			}
-			catch (Exception e)
-			{
-				log.debug("::sk command error", e);
-				postSystemMessage("<col=ff0000>Sidekick error:</col> " + e.getMessage());
-			}
-		});
-	}
-
-	private void postSystemMessage(String message)
-	{
-		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.GAMEMESSAGE)
-			.runeLiteFormattedMessage("[Sidekick] " + message)
-			.build());
 	}
 
 	private static BufferedImage buildIcon()
@@ -383,16 +539,18 @@ public class SidekickPlugin extends Plugin
 
 	private static LlmClient buildLlmClient(SidekickPluginConfig config, OkHttpClient http, Gson gson)
 	{
-		LlmProvider provider = LlmProvider.fromString(config.provider());
-		String model = config.model();
+		LlmProviderOption option = config.provider();
+		LlmProvider provider = option.provider();
 		long maxTokens = config.maxTokens();
+
+		String model = config.model();
+		if (model == null || model.trim().isEmpty())
+		{
+			model = option.defaultModel();
+		}
 
 		if (provider == LlmProvider.GEMINI)
 		{
-			if (model == null || model.isEmpty())
-			{
-				model = "gemini-2.5-flash";
-			}
 			return GeminiClient.builder()
 				.http(http)
 				.gson(gson)
@@ -403,10 +561,18 @@ public class SidekickPlugin extends Plugin
 				.build();
 		}
 
-		if (model == null || model.isEmpty())
+		if (provider == LlmProvider.XAI)
 		{
-			model = "claude-opus-4-8";
+			return XaiClient.builder()
+				.http(http)
+				.gson(gson)
+				.baseUrl(HttpUrl.get("https://api.x.ai"))
+				.apiKey(config.apiKey())
+				.model(model)
+				.maxTokens(maxTokens)
+				.build();
 		}
+
 		return AnthropicClient.builder()
 			.http(http)
 			.gson(gson)

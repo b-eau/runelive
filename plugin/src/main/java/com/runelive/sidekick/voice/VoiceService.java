@@ -1,16 +1,9 @@
 package com.runelive.sidekick.voice;
 
-import com.runelive.sidekick.SidekickPanel;
-import com.runelive.sidekick.agent.AgentReply;
-import com.runelive.sidekick.agent.AgentService;
-import com.runelive.sidekick.context.PlayerContext;
-import com.runelive.sidekick.context.PlayerContextSource;
-import com.runelive.sidekick.context.PlayerNotFoundException;
-import com.runelive.sidekick.llm.LlmMessage;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import javax.sound.sampled.LineUnavailableException;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
@@ -18,12 +11,13 @@ import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
 
 /**
- * Coordinates the push-to-talk voice pipeline:
- * microphone → Gemini STT → AgentService → {@link SidekickPanel}.
+ * Coordinates the push-to-talk voice capture and transcription:
+ * microphone → Gemini STT → {@code onTranscript}.
  *
- * <p>Status messages (listening, transcribing, tool lookups) are posted to game chat so the
- * player can follow along without leaving the game view. The finished response lands in the
- * sidebar panel, which is brought into focus automatically via the {@code openPanel} callback.
+ * <p>Once the speech is transcribed it is handed to the plugin's shared query path (via the
+ * {@code onTranscript} callback), so a spoken question joins the same conversation thread as a
+ * typed {@code ::sk} question or a panel follow-up. Status messages (listening, transcribing) are
+ * posted to game chat so the player can follow along without leaving the game view.
  *
  * <p>All blocking work (audio capture, network calls) executes on a single daemon thread so
  * neither the client thread nor the OkHttp pool is blocked. An {@link AtomicBoolean} flag
@@ -36,11 +30,8 @@ public class VoiceService
 	private static final int MIN_WAV_BYTES = 2_000;
 
 	private final GeminiVoiceClient voiceClient;
-	private final AgentService agentService;
-	private final PlayerContextSource contextSource;
 	private final ChatMessageManager chatMessages;
-	private final SidekickPanel panel;
-	private final Runnable openPanel;
+	private final Consumer<String> onTranscript;
 
 	private final AudioCapture capture = new AudioCapture();
 	private final ExecutorService executor = Executors.newSingleThreadExecutor(r ->
@@ -53,18 +44,12 @@ public class VoiceService
 
 	public VoiceService(
 		GeminiVoiceClient voiceClient,
-		AgentService agentService,
-		PlayerContextSource contextSource,
 		ChatMessageManager chatMessages,
-		SidekickPanel panel,
-		Runnable openPanel)
+		Consumer<String> onTranscript)
 	{
 		this.voiceClient = voiceClient;
-		this.agentService = agentService;
-		this.contextSource = contextSource;
 		this.chatMessages = chatMessages;
-		this.panel = panel;
-		this.openPanel = openPanel;
+		this.onTranscript = onTranscript;
 	}
 
 	/**
@@ -90,8 +75,8 @@ public class VoiceService
 	}
 
 	/**
-	 * Stops microphone capture and launches the transcription → agent pipeline
-	 * asynchronously. Safe to call from the client thread (AWT EDT).
+	 * Stops microphone capture and launches the transcription pipeline asynchronously.
+	 * Safe to call from the client thread (AWT EDT).
 	 */
 	public void stopAndProcess()
 	{
@@ -142,25 +127,7 @@ public class VoiceService
 			}
 
 			postMessage("<col=ffffff>You:</col> " + text);
-			postMessage("Sidekick is thinking...");
-
-			PlayerContext context;
-			try
-			{
-				context = contextSource.fetch(null);
-			}
-			catch (PlayerNotFoundException e)
-			{
-				postMessage("<col=ff0000>No player logged in</col> — cannot personalise advice.");
-				return;
-			}
-
-			AgentReply reply = agentService.chat(
-				context, List.of(LlmMessage.userText(text)),
-				step -> postMessage("<col=888888>" + step + "</col>"));
-
-			panel.showResponse(text, reply.getText());
-			openPanel.run();
+			onTranscript.accept(text);
 		}
 		catch (Exception e)
 		{

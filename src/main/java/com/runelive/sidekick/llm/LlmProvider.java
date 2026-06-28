@@ -5,13 +5,23 @@ package com.runelive.sidekick.llm;
 public enum LlmProvider
 {
 	ANTHROPIC,
-	GEMINI;
+	GEMINI,
+	XAI;
 
 	public static LlmProvider fromString(String value)
 	{
-		if (value != null && value.trim().equalsIgnoreCase("gemini"))
+		if (value == null)
+		{
+			return ANTHROPIC;
+		}
+		String v = value.trim().toLowerCase();
+		if (v.equals("gemini") || v.equals("google"))
 		{
 			return GEMINI;
+		}
+		if (v.equals("xai") || v.equals("grok") || v.equals("x.ai"))
+		{
+			return XAI;
 		}
 		return ANTHROPIC;
 	}
