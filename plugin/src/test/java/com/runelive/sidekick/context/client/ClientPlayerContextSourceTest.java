@@ -27,9 +27,11 @@ import net.runelite.api.Skill;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.vars.AccountType;
+import net.runelite.api.widgets.Widget;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -245,6 +247,48 @@ public class ClientPlayerContextSourceTest
 		{
 			// expected
 		}
+	}
+
+	@Test
+	public void readsCombatAchievementTiersAndPoints()
+	{
+		when(client.getVarbitValue(VarbitID.CA_POINTS)).thenReturn(540);
+		when(client.getVarbitValue(VarbitID.CA_TIER_STATUS_EASY)).thenReturn(2);
+		when(client.getVarbitValue(VarbitID.CA_TIER_STATUS_MEDIUM)).thenReturn(1);
+		// Hard..Grandmaster stay 0 via the anyInt() default → "not started"
+
+		source.onGameTick(new GameTick());
+		PlayerContext ctx = source.fetch("TestPlayer");
+
+		assertEquals(Integer.valueOf(540), ctx.getCombatTaskPoints());
+		assertNotNull(ctx.getCombatTaskTiers());
+		assertEquals("complete", ctx.getCombatTaskTiers().get("Easy"));
+		assertEquals("in progress", ctx.getCombatTaskTiers().get("Medium"));
+		assertEquals("not started", ctx.getCombatTaskTiers().get("Hard"));
+	}
+
+	@Test
+	public void readsCollectionLogFromOpenInterface()
+	{
+		Widget header = mock(Widget.class);
+		when(header.getText()).thenReturn("Collection Log - 567/1477");
+		when(client.getWidget(InterfaceID.Collection.HEADER_TEXT)).thenReturn(header);
+
+		source.onGameTick(new GameTick());
+		PlayerContext ctx = source.fetch("TestPlayer");
+
+		assertEquals(Integer.valueOf(567), ctx.getCollectionLogObtained());
+		assertEquals(Integer.valueOf(1477), ctx.getCollectionLogTotal());
+	}
+
+	@Test
+	public void collectionLogNullWhenInterfaceClosed()
+	{
+		// getWidget(...) returns null by default (unstubbed) → unknown
+		source.onGameTick(new GameTick());
+		PlayerContext ctx = source.fetch("TestPlayer");
+		assertNull(ctx.getCollectionLogObtained());
+		assertNull(ctx.getCollectionLogTotal());
 	}
 
 	@Test

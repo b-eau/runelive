@@ -12,6 +12,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Actor;
@@ -31,11 +33,13 @@ import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.gameval.DBTableID;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.VarPlayer;
 import net.runelite.api.vars.AccountType;
+import net.runelite.api.widgets.Widget;
 import net.runelite.client.eventbus.Subscribe;
 
 /**
@@ -52,6 +56,9 @@ import net.runelite.client.eventbus.Subscribe;
 @Slf4j
 public class ClientPlayerContextSource implements PlayerContextSource
 {
+	/** Matches an "obtained / total" count such as "567/1477" in collection-log header text. */
+	private static final Pattern OBTAINED_TOTAL = Pattern.compile("(\\d+)\\s*/\\s*(\\d+)");
+
 	private final Client client;
 
 	/** Written only on the client thread (GameTick), read from any thread. */
@@ -126,6 +133,7 @@ public class ClientPlayerContextSource implements PlayerContextSource
 
 		WorldPoint location = localPlayer.getWorldLocation();
 		boolean inInstance = client.isInInstancedRegion();
+		int[] collectionLog = readCollectionLog();
 
 		return PlayerContext.builder()
 			.username(username)
@@ -160,7 +168,81 @@ public class ClientPlayerContextSource implements PlayerContextSource
 			.equipment(readEquipment())
 			.wildernessLevel(detectWildernessLevel(location, inInstance))
 			.inInstance(inInstance)
+			// Long-term progression
+			.combatTaskPoints(client.getVarbitValue(VarbitID.CA_POINTS))
+			.combatTaskTiers(readCombatTaskTiers())
+			.collectionLogObtained(collectionLog == null ? null : collectionLog[0])
+			.collectionLogTotal(collectionLog == null ? null : collectionLog[1])
 			.build();
+	}
+
+	/**
+	 * Combat Achievement tier → status, in tier order. RuneLite's per-tier status varbit is
+	 * {@code 0} = not started, {@code 1} = in progress, {@code 2} = completed.
+	 */
+	private Map<String, String> readCombatTaskTiers()
+	{
+		Map<String, String> tiers = new LinkedHashMap<>();
+		tiers.put("Easy", caTierStatus(VarbitID.CA_TIER_STATUS_EASY));
+		tiers.put("Medium", caTierStatus(VarbitID.CA_TIER_STATUS_MEDIUM));
+		tiers.put("Hard", caTierStatus(VarbitID.CA_TIER_STATUS_HARD));
+		tiers.put("Elite", caTierStatus(VarbitID.CA_TIER_STATUS_ELITE));
+		tiers.put("Master", caTierStatus(VarbitID.CA_TIER_STATUS_MASTER));
+		tiers.put("Grandmaster", caTierStatus(VarbitID.CA_TIER_STATUS_GRANDMASTER));
+		return tiers;
+	}
+
+	private String caTierStatus(int varbitId)
+	{
+		int value = client.getVarbitValue(varbitId);
+		if (value >= 2)
+		{
+			return "complete";
+		}
+		return value == 1 ? "in progress" : "not started";
+	}
+
+	/**
+	 * The collection-log grand total ("obtained / total") is not stored in a varbit — it is only
+	 * shown in the collection-log interface header. We read it when that interface is open and retain
+	 * the last value between openings (like the bank). The {@code total >= 100} guard rejects the
+	 * small per-category counts so we only capture the genuine grand total.
+	 *
+	 * @return {@code [obtained, total]}, or {@code null} if not yet seen
+	 */
+	private int[] readCollectionLog()
+	{
+		Widget header = client.getWidget(InterfaceID.Collection.HEADER_TEXT);
+		int[] parsed = header == null ? null : parseObtainedTotal(header.getText());
+		if (parsed != null)
+		{
+			return parsed;
+		}
+		PlayerContext prev = snapshot;
+		if (prev != null && prev.getCollectionLogObtained() != null && prev.getCollectionLogTotal() != null)
+		{
+			return new int[]{prev.getCollectionLogObtained(), prev.getCollectionLogTotal()};
+		}
+		return null;
+	}
+
+	private static int[] parseObtainedTotal(String text)
+	{
+		if (text == null)
+		{
+			return null;
+		}
+		Matcher m = OBTAINED_TOTAL.matcher(text);
+		while (m.find())
+		{
+			int obtained = Integer.parseInt(m.group(1));
+			int total = Integer.parseInt(m.group(2));
+			if (total >= 100 && obtained <= total)
+			{
+				return new int[]{obtained, total};
+			}
+		}
+		return null;
 	}
 
 	private Map<String, PlayerContext.SkillStat> readSkills()
