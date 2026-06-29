@@ -9,8 +9,8 @@ import com.runelive.sidekick.llm.LlmProvider;
  */
 public enum LlmProviderOption
 {
-	GEMINI("Google Gemini", LlmProvider.GEMINI, "gemini-2.5-flash"),
-	ANTHROPIC("Anthropic (Claude)", LlmProvider.ANTHROPIC, "claude-opus-4-8"),
+	GEMINI("Google Gemini", LlmProvider.GEMINI, "gemini-3.5-flash"),
+	ANTHROPIC("Anthropic (Claude)", LlmProvider.ANTHROPIC, "claude-haiku-4-5-20251001"),
 	XAI("xAI (Grok)", LlmProvider.XAI, "grok-4-fast-reasoning");
 
 	private final String displayName;

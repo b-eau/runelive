@@ -48,7 +48,7 @@ public interface SidekickPluginConfig extends Config
 		keyName = "model",
 		name = "Model",
 		description = "Model name. Leave blank to use the selected provider's default "
-			+ "(gemini-2.5-flash / claude-opus-4-8 / grok-4-fast-reasoning).",
+			+ "(gemini-3.5-flash / claude-haiku-4-5-20251001 / grok-4-fast-reasoning).",
 		section = connectionSection,
 		position = 3)
 	default String model()
