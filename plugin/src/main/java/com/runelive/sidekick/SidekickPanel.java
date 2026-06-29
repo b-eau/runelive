@@ -100,7 +100,16 @@ public class SidekickPanel extends PluginPanel
 		cards = new JPanel(cardLayout);
 		cards.setBackground(BG);
 
-		transcript = new JEditorPane("text/html", wrap(PLACEHOLDER));
+		// Force the HTML view to track the (fixed) sidebar width so content wraps instead of
+		// producing a horizontal scrollbar, which is impractical to use mid-game.
+		transcript = new JEditorPane("text/html", wrap(PLACEHOLDER))
+		{
+			@Override
+			public boolean getScrollableTracksViewportWidth()
+			{
+				return true;
+			}
+		};
 		transcript.setEditable(false);
 		transcript.setBackground(BG);
 		transcript.setBorder(null);
@@ -232,6 +241,7 @@ public class SidekickPanel extends PluginPanel
 		scroll.setBorder(null);
 		scroll.setBackground(BG);
 		scroll.getViewport().setBackground(BG);
+		scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 		chat.add(scroll, BorderLayout.CENTER);
 
 		JPanel inputRow = new JPanel(new BorderLayout(4, 0));
@@ -278,6 +288,7 @@ public class SidekickPanel extends PluginPanel
 		JScrollPane scroll = new JScrollPane(historyList);
 		scroll.setBorder(null);
 		scroll.getViewport().setBackground(BG);
+		scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
 		history.add(scroll, BorderLayout.CENTER);
 		return history;
 	}
