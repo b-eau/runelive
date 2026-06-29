@@ -43,15 +43,18 @@ public class SystemPromptsTest
 	}
 
 	@Test
-	public void asksForRichComparativeGearAwareAnswers()
+	public void asksForConciseComparativeGearAwareAnswers()
 	{
 		String prompt = SystemPrompts.build(ironman());
-		assertTrue("compares options with tradeoffs", prompt.contains("tradeoffs for EACH option"));
+		assertTrue("compares options with tradeoffs", prompt.contains("key tradeoffs"));
 		assertTrue("quantifies xp rate", prompt.contains("xp/hr"));
 		assertTrue("quantifies cost/profit", prompt.contains("gp/hr"));
 		assertTrue("accounts for risk / AFK-ness", prompt.contains("AFK-ness"));
-		assertTrue("leverages the player's owned gear", prompt.contains("equipment, inventory and bank"));
-		assertTrue("flags first-time setup", prompt.contains("first-time essentials"));
+		assertTrue("leverages the player's owned gear", prompt.contains("equipment/inventory/bank"));
+		assertTrue("flags first-time setup", prompt.contains("first-time setup"));
+		assertTrue("pushes for brevity", prompt.contains("Be concise"));
+		assertTrue("avoids tables that overflow the narrow panel",
+			prompt.contains("Do NOT use Markdown tables"));
 	}
 
 	@Test
