@@ -75,7 +75,12 @@ public class GeminiVoiceClient
 
 		JsonObject genConfig = new JsonObject();
 		genConfig.addProperty("temperature", 0);
-		genConfig.addProperty("maxOutputTokens", 256);
+		genConfig.addProperty("maxOutputTokens", 512);
+		// Transcription needs no reasoning — disabling the model's thinking budget cuts latency
+		// substantially while leaving accuracy untouched.
+		JsonObject thinkingConfig = new JsonObject();
+		thinkingConfig.addProperty("thinkingBudget", 0);
+		genConfig.add("thinkingConfig", thinkingConfig);
 
 		JsonObject body = new JsonObject();
 		body.add("contents", contents);
