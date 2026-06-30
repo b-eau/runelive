@@ -17,7 +17,7 @@ public interface SidekickPluginConfig extends Config
 
 	@ConfigSection(
 		name = "Voice",
-		description = "Push-to-talk voice input",
+		description = "Push-to-talk voice input (transcription or a realtime voice agent)",
 		position = 1)
 	String voiceSection = "voice";
 
@@ -82,15 +82,16 @@ public interface SidekickPluginConfig extends Config
 	// ── Voice ───────────────────────────────────────────────────────────────────────────────────
 
 	@ConfigItem(
-		keyName = "enableVoice",
-		name = "Enable voice input",
-		description = "Hold the push-to-talk key to speak your question. Transcription uses Gemini, so a "
-			+ "Gemini API key is required (reused automatically when your AI Provider is Gemini).",
+		keyName = "voiceMode",
+		name = "Voice mode",
+		description = "Off, push-to-talk transcription (speech → text → the normal text agent, using "
+			+ "Gemini for transcription), or a realtime voice agent (audio-to-audio, no transcription "
+			+ "step). Both modes use the push-to-talk key below.",
 		section = voiceSection,
 		position = 0)
-	default boolean enableVoice()
+	default VoiceMode voiceMode()
 	{
-		return false;
+		return VoiceMode.OFF;
 	}
 
 	@ConfigItem(
@@ -105,13 +106,37 @@ public interface SidekickPluginConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "voiceApiKey",
-		name = "Voice API key (Gemini)",
-		description = "Only needed when your AI Provider is NOT Gemini. Leave blank to reuse your main "
-			+ "API key when the provider is Gemini.",
-		secret = true,
+		keyName = "realtimeProvider",
+		name = "Realtime provider",
+		description = "Which voice-native agent to use in Realtime mode.",
 		section = voiceSection,
 		position = 2)
+	default RealtimeVoiceProvider realtimeProvider()
+	{
+		return RealtimeVoiceProvider.XAI;
+	}
+
+	@ConfigItem(
+		keyName = "realtimeApiKey",
+		name = "Realtime API key",
+		description = "API key for the realtime voice provider (Realtime mode only). Leave blank to "
+			+ "reuse your main API key when it matches the realtime provider (e.g. provider = xAI).",
+		secret = true,
+		section = voiceSection,
+		position = 3)
+	default String realtimeApiKey()
+	{
+		return "";
+	}
+
+	@ConfigItem(
+		keyName = "voiceApiKey",
+		name = "Transcription API key (Gemini)",
+		description = "Transcription mode only. Needed when your AI Provider is NOT Gemini; leave blank "
+			+ "to reuse your main API key when the provider is Gemini.",
+		secret = true,
+		section = voiceSection,
+		position = 4)
 	default String voiceApiKey()
 	{
 		return "";

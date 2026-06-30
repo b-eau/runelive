@@ -24,8 +24,20 @@ import net.runelite.client.chat.QueuedMessage;
  * prevents a new capture from starting until the previous pipeline run completes.
  */
 @Slf4j
-public class VoiceService
+public class VoiceService implements VoiceBackend
 {
+	@Override
+	public void pressToTalk()
+	{
+		startRecording();
+	}
+
+	@Override
+	public void releaseToTalk()
+	{
+		stopAndProcess();
+	}
+
 	/** Minimum WAV size (bytes) to treat as non-empty audio — avoids sending silence. */
 	private static final int MIN_WAV_BYTES = 2_000;
 

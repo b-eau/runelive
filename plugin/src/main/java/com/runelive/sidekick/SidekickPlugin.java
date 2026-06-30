@@ -31,7 +31,10 @@ import com.runelive.sidekick.llm.LlmProvider;
 import com.runelive.sidekick.llm.XaiClient;
 import com.runelive.sidekick.tools.HiscoresLookupTool;
 import com.runelive.sidekick.voice.GeminiVoiceClient;
+import com.runelive.sidekick.voice.VoiceBackend;
 import com.runelive.sidekick.voice.VoiceService;
+import com.runelive.sidekick.voice.realtime.OpenAiRealtimeSession;
+import com.runelive.sidekick.voice.realtime.RealtimeVoiceBackend;
 import com.runelive.sidekick.web.ChatService;
 import java.awt.Color;
 import java.awt.Font;
@@ -133,7 +136,7 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 	private NavigationButton navButton;
 	private PriceClient priceClient;
 	private WikiClient wikiClient;
-	private VoiceService voiceService;
+	private VoiceBackend voiceBackend;
 	private HotkeyListener hotkeyListener;
 
 	// Conversation history lives independently of the API key, so it survives config changes and is
@@ -480,49 +483,117 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 			new WikiSearchTool(wikiClient),
 			new RecallConversationsTool(conversationManager),
 			new HiscoresLookupTool(hiscoresSource, this::currentUsername));
-		agentService = new AgentService(llm, new ToolRegistry(tools), MAX_AGENT_STEPS);
+		ToolRegistry registry = new ToolRegistry(tools);
+		agentService = new AgentService(llm, registry, MAX_AGENT_STEPS);
 
 		// Context: live client data
 		chatService = new ChatService(contextSource, agentService, null);
 
-		// Voice (optional — transcription requires a Gemini key regardless of the main LLM provider)
-		if (config.enableVoice())
-		{
-			String voiceKey = resolveVoiceApiKey(config);
-			if (voiceKey != null)
-			{
-				OkHttpClient voiceHttpClient = okHttpClient.newBuilder()
-					.readTimeout(60, TimeUnit.SECONDS)
-					.build();
-				GeminiVoiceClient voiceClient = new GeminiVoiceClient(
-					voiceHttpClient, gson,
-					HttpUrl.get("https://generativelanguage.googleapis.com"),
-					voiceKey);
-				voiceService = new VoiceService(voiceClient, chatMessageManager, this::onVoiceTranscript);
-				hotkeyListener = new HotkeyListener(() -> config.voiceHotkey())
-				{
-					@Override
-					public void hotkeyPressed()
-					{
-						voiceService.startRecording();
-					}
+		// Voice (optional)
+		setupVoice(registry);
 
-					@Override
-					public void hotkeyReleased()
-					{
-						voiceService.stopAndProcess();
-					}
-				};
-				keyManager.registerKeyListener(hotkeyListener);
-				log.info("OSRS Sidekick voice activated");
-			}
-			else
-			{
-				log.warn("OSRS Sidekick: voice enabled but no Gemini API key available — voice disabled");
-			}
+		log.info("OSRS Sidekick started (provider={}, model={}, voice={})",
+			config.provider(), config.model(), config.voiceMode());
+	}
+
+	/**
+	 * Wires push-to-talk to the configured voice backend: transcription (Gemini STT → text agent) or
+	 * a realtime audio-to-audio agent. The same hotkey drives whichever backend is built.
+	 */
+	private void setupVoice(ToolRegistry registry)
+	{
+		VoiceMode mode = config.voiceMode();
+		if (mode == VoiceMode.OFF)
+		{
+			return;
 		}
 
-		log.info("OSRS Sidekick started (provider={}, model={})", config.provider(), config.model());
+		VoiceBackend backend = mode == VoiceMode.REALTIME
+			? buildRealtimeBackend(registry)
+			: buildTranscriptionBackend();
+		if (backend == null)
+		{
+			return;
+		}
+
+		voiceBackend = backend;
+		hotkeyListener = new HotkeyListener(() -> config.voiceHotkey())
+		{
+			@Override
+			public void hotkeyPressed()
+			{
+				voiceBackend.pressToTalk();
+			}
+
+			@Override
+			public void hotkeyReleased()
+			{
+				voiceBackend.releaseToTalk();
+			}
+		};
+		keyManager.registerKeyListener(hotkeyListener);
+		log.info("OSRS Sidekick voice activated ({})", mode);
+	}
+
+	/** Push-to-talk transcription: Gemini STT, then the normal text agent. */
+	private VoiceBackend buildTranscriptionBackend()
+	{
+		String voiceKey = resolveVoiceApiKey(config);
+		if (voiceKey == null)
+		{
+			log.warn("OSRS Sidekick: transcription voice needs a Gemini API key — voice disabled");
+			return null;
+		}
+		OkHttpClient voiceHttpClient = okHttpClient.newBuilder()
+			.readTimeout(60, TimeUnit.SECONDS)
+			.build();
+		GeminiVoiceClient voiceClient = new GeminiVoiceClient(
+			voiceHttpClient, gson,
+			HttpUrl.get("https://generativelanguage.googleapis.com"),
+			voiceKey);
+		return new VoiceService(voiceClient, chatMessageManager, this::onVoiceTranscript);
+	}
+
+	/**
+	 * Realtime audio-to-audio voice agent. Currently xAI Grok, spoken to over the OpenAI Realtime
+	 * protocol (see {@link OpenAiRealtimeSession}); OpenAI Realtime / Gemini Live slot in by adding a
+	 * {@link RealtimeVoiceProvider} value and selecting the session/endpoint here.
+	 */
+	private VoiceBackend buildRealtimeBackend(ToolRegistry registry)
+	{
+		String key = resolveRealtimeApiKey(config);
+		if (key == null)
+		{
+			log.warn("OSRS Sidekick: realtime voice needs an API key for the realtime provider — voice disabled");
+			return null;
+		}
+
+		// No read timeout (a streaming socket stays open); keep-alive pings hold it up.
+		OkHttpClient rtClient = okHttpClient.newBuilder()
+			.pingInterval(Duration.ofSeconds(20))
+			.readTimeout(Duration.ZERO)
+			.build();
+
+		// xAI realtime endpoint + model (best-effort; verify against live xAI docs).
+		OpenAiRealtimeSession session = new OpenAiRealtimeSession(
+			rtClient, gson, HttpUrl.get("https://api.x.ai/v1/realtime"), key, false);
+		String rtModel = "grok-realtime";
+
+		final NavigationButton capturedNav = navButton;
+		return new RealtimeVoiceBackend(
+			session, registry, contextSource, conversationManager,
+			sidekickPanel,
+			() -> SwingUtilities.invokeLater(() ->
+			{
+				if (capturedNav != null)
+				{
+					clientToolbar.openPanel(capturedNav);
+				}
+			}),
+			this::onAgentStep,
+			this::postSystemMessage,
+			rtModel,
+			null);
 	}
 
 	private void stopServices()
@@ -532,10 +603,10 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 			keyManager.unregisterKeyListener(hotkeyListener);
 			hotkeyListener = null;
 		}
-		if (voiceService != null)
+		if (voiceBackend != null)
 		{
-			voiceService.shutdown();
-			voiceService = null;
+			voiceBackend.shutdown();
+			voiceBackend = null;
 		}
 		agentService = null;
 		chatService = null;
@@ -556,6 +627,23 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 		{
 			String mainKey = config.apiKey();
 			return (mainKey != null && !mainKey.trim().isEmpty()) ? mainKey.trim() : null;
+		}
+		return null;
+	}
+
+	/** Resolves the realtime provider's key, reusing the main key when the providers coincide (xAI). */
+	private static String resolveRealtimeApiKey(SidekickPluginConfig config)
+	{
+		String key = config.realtimeApiKey();
+		if (key != null && !key.trim().isEmpty())
+		{
+			return key.trim();
+		}
+		if (config.realtimeProvider() == RealtimeVoiceProvider.XAI
+			&& config.provider() == LlmProviderOption.XAI)
+		{
+			String main = config.apiKey();
+			return (main != null && !main.trim().isEmpty()) ? main.trim() : null;
 		}
 		return null;
 	}
