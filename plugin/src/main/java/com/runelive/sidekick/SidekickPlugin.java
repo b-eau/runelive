@@ -51,8 +51,7 @@ import javax.swing.SwingUtilities;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
-import net.runelite.api.events.ChatMessage;
-import net.runelite.client.chat.ChatCommandManager;
+import net.runelite.api.events.CommandExecuted;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
@@ -123,9 +122,6 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 	private ChatMessageManager chatMessageManager;
 
 	@Inject
-	private ChatCommandManager chatCommandManager;
-
-	@Inject
 	private ClientToolbar clientToolbar;
 
 	@Getter
@@ -169,7 +165,6 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 			t.setDaemon(true);
 			return t;
 		});
-		chatCommandManager.registerCommand("sk", this::handleSkCommand);
 
 		startServices();
 	}
@@ -177,7 +172,6 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 	@Override
 	protected void shutDown()
 	{
-		chatCommandManager.unregisterCommand("sk");
 		if (queryExecutor != null)
 		{
 			queryExecutor.shutdownNow();
@@ -278,9 +272,27 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 
 	// ── Query entry points ───────────────────────────────────────────────────────────────────────
 
-	private void handleSkCommand(ChatMessage chatMessage, String message)
+	/**
+	 * Handles the {@code ::sk <question>} client command. {@code ::}-prefixed input is intercepted by
+	 * the client and delivered as a {@link CommandExecuted} event (never a chat message), so this —
+	 * not {@code ChatCommandManager} (which only sees the {@code !bang} commands a player sends to
+	 * chat) — is the correct hook.
+	 */
+	@Subscribe
+	public void onCommandExecuted(CommandExecuted event)
 	{
-		ask(message == null ? "" : message.trim());
+		if (!"sk".equalsIgnoreCase(event.getCommand()))
+		{
+			return;
+		}
+		String[] args = event.getArguments();
+		String query = args == null ? "" : String.join(" ", args).trim();
+		if (query.isEmpty())
+		{
+			postSystemMessage("Usage: <col=ffffff>::sk your question</col>");
+			return;
+		}
+		ask(query);
 	}
 
 	/** External trigger (chat command / voice): show the pending state, focus the panel, then run. */
