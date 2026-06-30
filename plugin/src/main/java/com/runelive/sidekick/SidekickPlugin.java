@@ -347,8 +347,7 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 				List<LlmMessage> history = manager.history();
 				String memory = manager.memoryBlock(username);
 
-				AgentReply reply = svc.chat(context, history, memory,
-					step -> postSystemMessage("<col=888888>" + step + "</col>"));
+				AgentReply reply = svc.chat(context, history, memory, this::onAgentStep);
 
 				manager.recordAssistant(reply.getText());
 
@@ -394,6 +393,20 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 		if (nav != null)
 		{
 			SwingUtilities.invokeLater(() -> clientToolbar.openPanel(nav));
+		}
+	}
+
+	/** Reports one tool-call step: always to the sidebar (parity), and to game chat when enabled. */
+	private void onAgentStep(String step)
+	{
+		SidekickPanel panel = sidekickPanel;
+		if (panel != null)
+		{
+			panel.showProgress(step);
+		}
+		if (config.showToolCallsInChat())
+		{
+			postSystemMessage("<col=888888>" + step + "</col>");
 		}
 	}
 

@@ -67,6 +67,18 @@ public interface SidekickPluginConfig extends Config
 		return 2048;
 	}
 
+	@ConfigItem(
+		keyName = "showToolCallsInChat",
+		name = "Show tool calls in chat",
+		description = "Post the sidekick's live tool lookups (wiki, prices, hiscores) to your game chat "
+			+ "as it works. The sidebar shows these regardless.",
+		section = connectionSection,
+		position = 5)
+	default boolean showToolCallsInChat()
+	{
+		return true;
+	}
+
 	// ── Voice ───────────────────────────────────────────────────────────────────────────────────
 
 	@ConfigItem(
