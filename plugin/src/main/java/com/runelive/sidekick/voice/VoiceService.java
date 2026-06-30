@@ -29,6 +29,10 @@ public class VoiceService
 	/** Minimum WAV size (bytes) to treat as non-empty audio — avoids sending silence. */
 	private static final int MIN_WAV_BYTES = 2_000;
 
+	/** A transcription with fewer than this many words is treated as an accidental hotkey tap and
+	 *  discarded (a real question is essentially always two or more words). */
+	private static final int MIN_WORDS = 2;
+
 	private final GeminiVoiceClient voiceClient;
 	private final ChatMessageManager chatMessages;
 	private final Consumer<String> onTranscript;
@@ -125,6 +129,11 @@ public class VoiceService
 				postMessage("<col=ff0000>Could not understand the audio.</col> Please try again.");
 				return;
 			}
+			if (isTooShort(text))
+			{
+				postMessage("Ignored that — too short to be a question. Hold the key and ask a full sentence.");
+				return;
+			}
 
 			postMessage("<col=ffffff>You:</col> " + text);
 			onTranscript.accept(text);
@@ -146,5 +155,16 @@ public class VoiceService
 			.type(ChatMessageType.GAMEMESSAGE)
 			.runeLiteFormattedMessage("[Sidekick] " + message)
 			.build());
+	}
+
+	/** True when a transcription is too short to be a genuine question (accidental hotkey tap). */
+	static boolean isTooShort(String text)
+	{
+		if (text == null)
+		{
+			return true;
+		}
+		String trimmed = text.trim();
+		return trimmed.isEmpty() || trimmed.split("\\s+").length < MIN_WORDS;
 	}
 }
