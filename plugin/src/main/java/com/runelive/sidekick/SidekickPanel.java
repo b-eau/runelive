@@ -81,8 +81,12 @@ public class SidekickPanel extends PluginPanel
 	private final DefaultListModel<Conversation> historyModel;
 	private JList<Conversation> historyList;
 
+	/** Most recent tool-call progress lines shown under the "thinking" indicator. */
+	private static final int MAX_PROGRESS = 8;
+
 	// Render state for the active thread (mutated only on the EDT).
 	private List<Conversation.Turn> turns = new ArrayList<>();
+	private final List<String> progress = new ArrayList<>();
 	private String pendingUser;
 	private boolean thinking;
 
@@ -143,10 +147,29 @@ public class SidekickPanel extends PluginPanel
 		SwingUtilities.invokeLater(() ->
 		{
 			pendingUser = userText;
+			progress.clear();
 			thinking = true;
 			setBusy(true);
 			renderTranscript();
 			cardLayout.show(cards, "chat");
+		});
+	}
+
+	/** Appends a live tool-call step under the "thinking" indicator (parity with game chat). */
+	public void showProgress(String step)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			if (!thinking)
+			{
+				return;
+			}
+			progress.add(step);
+			while (progress.size() > MAX_PROGRESS)
+			{
+				progress.remove(0);
+			}
+			renderTranscript();
 		});
 	}
 
@@ -336,6 +359,10 @@ public class SidekickPanel extends PluginPanel
 		if (thinking)
 		{
 			body.append("<p style='color:#888888;margin-top:4px'><i>Sidekick is thinking…</i></p>");
+			for (String step : progress)
+			{
+				body.append("<p style='color:#777777;margin:0 0 0 8px'>• ").append(esc(step)).append("</p>");
+			}
 		}
 		if (trailingHtml != null)
 		{
