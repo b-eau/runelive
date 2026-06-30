@@ -20,14 +20,15 @@ import okhttp3.WebSocketListener;
 
 /**
  * A {@link RealtimeVoiceSession} that speaks the OpenAI Realtime API protocol over an OkHttp
- * WebSocket. It is used here for xAI Grok (pointed at xAI's realtime endpoint), and the same class
- * serves OpenAI Realtime by swapping the base URL; Gemini Live would be a separate implementation.
+ * WebSocket. It is used here for xAI Grok, whose Voice Agent API is documented as compatible with
+ * the OpenAI Realtime specification (endpoint {@code wss://api.x.ai/v1/realtime}, model
+ * {@code grok-voice-latest}, Bearer auth, no beta header). The same class serves OpenAI Realtime by
+ * swapping the base URL and enabling the beta header; Gemini Live, whose protocol differs, would be
+ * a separate implementation.
  *
- * <p><b>Protocol note:</b> the event shapes below follow the OpenAI Realtime API. xAI's exact wire
- * format could not be verified offline, so the endpoint, model name and event details may need
- * adjustment once confirmed against live xAI docs. The wire format is deliberately isolated here so
- * only this class changes. All callbacks run on the OkHttp websocket thread; tool calls are executed
- * on a separate thread so the read loop is never blocked.
+ * <p>The wire format is deliberately isolated here so provider quirks only touch this class. All
+ * callbacks run on the OkHttp websocket thread; tool calls are executed on a separate thread so the
+ * read loop is never blocked.
  */
 @Slf4j
 public class OpenAiRealtimeSession implements RealtimeVoiceSession

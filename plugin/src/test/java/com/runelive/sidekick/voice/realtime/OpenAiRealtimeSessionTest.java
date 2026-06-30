@@ -15,9 +15,9 @@ public class OpenAiRealtimeSessionTest
 		JsonObject schema = new JsonObject();
 		schema.addProperty("type", "object");
 		return RealtimeSessionConfig.builder()
-			.model("grok-realtime")
+			.model("grok-voice-latest")
 			.instructions("You are Sidekick.")
-			.voice("alloy")
+			.voice("eve")
 			.tools(List.of(new ToolSpec("get_grand_exchange_price", "Price lookup", schema)))
 			.inputSampleRateHz(24_000)
 			.outputSampleRateHz(24_000)
@@ -32,7 +32,7 @@ public class OpenAiRealtimeSessionTest
 
 		JsonObject session = e.getAsJsonObject("session");
 		assertEquals("You are Sidekick.", session.get("instructions").getAsString());
-		assertEquals("alloy", session.get("voice").getAsString());
+		assertEquals("eve", session.get("voice").getAsString());
 		assertEquals("pcm16", session.get("input_audio_format").getAsString());
 		assertEquals("pcm16", session.get("output_audio_format").getAsString());
 		// Push-to-talk → manual turn commit, so server VAD is disabled.

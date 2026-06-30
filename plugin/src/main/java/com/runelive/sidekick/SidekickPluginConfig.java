@@ -117,13 +117,24 @@ public interface SidekickPluginConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "realtimeVoice",
+		name = "Realtime voice",
+		description = "Which Grok voice speaks in Realtime mode.",
+		section = voiceSection,
+		position = 3)
+	default RealtimeVoice realtimeVoice()
+	{
+		return RealtimeVoice.EVE;
+	}
+
+	@ConfigItem(
 		keyName = "realtimeApiKey",
 		name = "Realtime API key",
 		description = "API key for the realtime voice provider (Realtime mode only). Leave blank to "
 			+ "reuse your main API key when it matches the realtime provider (e.g. provider = xAI).",
 		secret = true,
 		section = voiceSection,
-		position = 3)
+		position = 4)
 	default String realtimeApiKey()
 	{
 		return "";
@@ -136,7 +147,7 @@ public interface SidekickPluginConfig extends Config
 			+ "to reuse your main API key when the provider is Gemini.",
 		secret = true,
 		section = voiceSection,
-		position = 4)
+		position = 5)
 	default String voiceApiKey()
 	{
 		return "";

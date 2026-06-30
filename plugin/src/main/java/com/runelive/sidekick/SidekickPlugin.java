@@ -574,10 +574,10 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 			.readTimeout(Duration.ZERO)
 			.build();
 
-		// xAI realtime endpoint + model (best-effort; verify against live xAI docs).
+		// xAI's Voice Agent API: wss://api.x.ai/v1/realtime, OpenAI Realtime-compatible, Bearer auth
+		// (no beta header). Model "grok-voice-latest"; voices Ara/Rex/Sal/Eve/Leo.
 		OpenAiRealtimeSession session = new OpenAiRealtimeSession(
 			rtClient, gson, HttpUrl.get("https://api.x.ai/v1/realtime"), key, false);
-		String rtModel = "grok-realtime";
 
 		final NavigationButton capturedNav = navButton;
 		return new RealtimeVoiceBackend(
@@ -592,8 +592,8 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 			}),
 			this::onAgentStep,
 			this::postSystemMessage,
-			rtModel,
-			null);
+			"grok-voice-latest",
+			config.realtimeVoice().apiName());
 	}
 
 	private void stopServices()
