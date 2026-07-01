@@ -79,6 +79,18 @@ public interface SidekickPluginConfig extends Config
 		return true;
 	}
 
+	@ConfigItem(
+		keyName = "proactiveReview",
+		name = "Auto-review on open",
+		description = "When you open the sidebar, automatically review your current setup and suggest "
+			+ "improvements. Uses an API call each time, so it is throttled to a few minutes.",
+		section = connectionSection,
+		position = 6)
+	default boolean proactiveReview()
+	{
+		return false;
+	}
+
 	// ── Voice ───────────────────────────────────────────────────────────────────────────────────
 
 	@ConfigItem(
