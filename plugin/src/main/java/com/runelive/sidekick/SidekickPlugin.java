@@ -22,6 +22,10 @@ import com.runelive.sidekick.conversation.Conversation;
 import com.runelive.sidekick.conversation.ConversationManager;
 import com.runelive.sidekick.conversation.ConversationStore;
 import com.runelive.sidekick.conversation.RecallConversationsTool;
+import com.runelive.sidekick.goal.Goal;
+import com.runelive.sidekick.goal.GoalService;
+import com.runelive.sidekick.goal.GoalStore;
+import com.runelive.sidekick.goal.GoalsTool;
 import com.runelive.sidekick.http.HttpJson;
 import com.runelive.sidekick.llm.AnthropicClient;
 import com.runelive.sidekick.llm.GeminiClient;
@@ -44,6 +48,7 @@ import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -143,6 +148,12 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 	// browsable even before a key is configured.
 	private ConversationStore conversationStore;
 	private ConversationManager conversationManager;
+	private GoalStore goalStore;
+	private GoalService goalService;
+
+	/** Minimum gap between auto-reviews so opening the panel repeatedly can't burn API calls. */
+	private static final long AUTO_REVIEW_COOLDOWN_MS = 5 * 60_000L;
+	private volatile long lastAutoReviewAt;
 
 	@Override
 	protected void startUp()
@@ -151,6 +162,8 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 
 		conversationStore = new ConversationStore(gson);
 		conversationManager = new ConversationManager(conversationStore);
+		goalStore = new GoalStore(gson);
+		goalService = new GoalService(goalStore);
 
 		sidekickPanel = new SidekickPanel();
 		sidekickPanel.setListener(this);
@@ -186,6 +199,8 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 		sidekickPanel = null;
 		conversationManager = null;
 		conversationStore = null;
+		goalService = null;
+		goalStore = null;
 		eventBus.unregister(contextSource);
 	}
 
@@ -271,6 +286,85 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 				panel.showConversation(conversation);
 			}
 		});
+	}
+
+	@Override
+	public void onPanelShown()
+	{
+		refreshGoals();
+		maybeAutoReview();
+	}
+
+	// ── Goals & proactive review ─────────────────────────────────────────────────────────────────
+
+	/** Loads the player's active goals off-thread and shows them in the panel's goals strip. */
+	private void refreshGoals()
+	{
+		ExecutorService exec = queryExecutor;
+		if (exec == null || goalService == null)
+		{
+			return;
+		}
+		exec.submit(() ->
+		{
+			SidekickPanel panel = sidekickPanel;
+			if (panel != null)
+			{
+				panel.showGoals(goalTexts(currentUsername()));
+			}
+		});
+	}
+
+	private List<String> goalTexts(String username)
+	{
+		List<String> texts = new ArrayList<>();
+		if (username != null && goalService != null)
+		{
+			for (Goal goal : goalService.active(username))
+			{
+				texts.add(goal.getText());
+			}
+		}
+		return texts;
+	}
+
+	/** Auto-reviews the player's setup when the panel opens, if enabled and not recently done. */
+	private void maybeAutoReview()
+	{
+		if (!config.proactiveReview() || agentService == null)
+		{
+			return;
+		}
+		long now = System.currentTimeMillis();
+		if (now - lastAutoReviewAt < AUTO_REVIEW_COOLDOWN_MS)
+		{
+			return;
+		}
+		if (currentUsername() == null)
+		{
+			return; // no player logged in — don't nag on the login screen
+		}
+		lastAutoReviewAt = now;
+		ask(SidekickPanel.reviewPrompt());
+	}
+
+	private static String combineExtras(String a, String b)
+	{
+		boolean emptyA = a == null || a.trim().isEmpty();
+		boolean emptyB = b == null || b.trim().isEmpty();
+		if (emptyA && emptyB)
+		{
+			return null;
+		}
+		if (emptyA)
+		{
+			return b;
+		}
+		if (emptyB)
+		{
+			return a;
+		}
+		return a + "\n\n" + b;
 	}
 
 	// ── Query entry points ───────────────────────────────────────────────────────────────────────
@@ -360,9 +454,12 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 				String username = context.getUsername();
 				manager.recordUser(username, query);
 				List<LlmMessage> history = manager.history();
-				String memory = manager.memoryBlock(username);
+				// The agent sees the player's active goals plus recent-conversation summaries.
+				String promptExtras = combineExtras(
+					goalService == null ? null : goalService.goalsBlock(username),
+					manager.memoryBlock(username));
 
-				AgentReply reply = svc.chat(context, history, memory, this::onAgentStep);
+				AgentReply reply = svc.chat(context, history, promptExtras, this::onAgentStep);
 
 				manager.recordAssistant(reply.getText());
 
@@ -370,6 +467,8 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 				if (panel != null)
 				{
 					panel.showConversation(manager.current());
+					// Goals may have changed via the manage_goals tool this turn.
+					panel.showGoals(goalTexts(username));
 				}
 			}
 			catch (Exception e)
@@ -482,7 +581,8 @@ public class SidekickPlugin extends Plugin implements SidekickPanel.Listener
 			new GrandExchangePriceTool(priceClient),
 			new WikiSearchTool(wikiClient),
 			new RecallConversationsTool(conversationManager),
-			new HiscoresLookupTool(hiscoresSource, this::currentUsername));
+			new HiscoresLookupTool(hiscoresSource, this::currentUsername),
+			new GoalsTool(goalService, this::currentUsername));
 		ToolRegistry registry = new ToolRegistry(tools);
 		agentService = new AgentService(llm, registry, MAX_AGENT_STEPS);
 

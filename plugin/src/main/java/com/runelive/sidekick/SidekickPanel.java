@@ -9,10 +9,12 @@ import java.awt.FlowLayout;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.BorderFactory;
+import javax.swing.BoxLayout;
 import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JEditorPane;
+import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -46,6 +48,32 @@ public class SidekickPanel extends PluginPanel
 
 		/** The player picked a past conversation to reopen. */
 		void onConversationSelected(String id);
+
+		/** The panel became visible — a chance to proactively review (throttled by the plugin). */
+		void onPanelShown();
+	}
+
+	/** One-tap prompts. Each entry is {button label, prompt sent as if typed}. */
+	private static final String[][] QUICK_ACTIONS = {
+		{"What next?", "What should I do next right now, given my account and what I'm currently doing?"},
+		{"Review setup", REVIEW_PROMPT_CONST()},
+		{"Money maker", "What's a good money-making method for me right now given my stats, gear and "
+			+ "the current prices? Give one or two options with rough gp/hr."},
+		{"My goals", "How am I progressing toward my current goals, and what should I do next for them?"},
+	};
+
+	/** Shared so the plugin's auto-review uses the exact same prompt as the button. */
+	public static String reviewPrompt()
+	{
+		return REVIEW_PROMPT_CONST();
+	}
+
+	private static String REVIEW_PROMPT_CONST()
+	{
+		return "Review what I'm doing right now and my overall account, and suggest the highest-impact "
+			+ "improvements I could realistically get soon — better tools or gear, XP boosts (diaries, "
+			+ "outfits, relics), efficiency unlocks, or a better method. Be specific and concrete, and "
+			+ "explain why each is worth it for me.";
 	}
 
 	private static final Color BG = new Color(0x2b, 0x2b, 0x2b);
@@ -90,6 +118,7 @@ public class SidekickPanel extends PluginPanel
 	private String pendingUser;
 	private boolean thinking;
 
+	private final JLabel goalsLabel = new JLabel();
 	private Listener listener;
 
 	public SidekickPanel()
@@ -98,7 +127,24 @@ public class SidekickPanel extends PluginPanel
 		setLayout(new BorderLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		add(buildToolbar(), BorderLayout.NORTH);
+		JPanel north = new JPanel();
+		north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
+		north.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		north.add(buildToolbar());
+		north.add(buildQuickActions());
+		configureGoalsLabel();
+		north.add(goalsLabel);
+		add(north, BorderLayout.NORTH);
+
+		// Proactively review when the panel becomes visible (the plugin throttles / gates it).
+		addHierarchyListener(e ->
+		{
+			if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0
+				&& isShowing() && listener != null)
+			{
+				listener.onPanelShown();
+			}
+		});
 
 		cardLayout = new java.awt.CardLayout();
 		cards = new JPanel(cardLayout);
@@ -216,6 +262,28 @@ public class SidekickPanel extends PluginPanel
 		});
 	}
 
+	/** Shows the player's active goals as a compact strip, or hides it when there are none. */
+	public void showGoals(List<String> goals)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			if (goals == null || goals.isEmpty())
+			{
+				goalsLabel.setVisible(false);
+				return;
+			}
+			StringBuilder sb = new StringBuilder("<html><body style='width:190px'>"
+				+ "<b style='color:#ff981f'>Goals</b>");
+			for (String g : goals)
+			{
+				sb.append("<br>• ").append(esc(g));
+			}
+			sb.append("</body></html>");
+			goalsLabel.setText(sb.toString());
+			goalsLabel.setVisible(true);
+		});
+	}
+
 	// ── UI construction ────────────────────────────────────────────────────────────────────────────
 
 	private JPanel buildToolbar()
@@ -253,6 +321,47 @@ public class SidekickPanel extends PluginPanel
 		toolbar.add(newButton);
 		toolbar.add(historyButton);
 		return toolbar;
+	}
+
+	/** A wrapping row of one-tap prompts (incl. the proactive "Review setup"). */
+	private JPanel buildQuickActions()
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 2));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		row.setBorder(BorderFactory.createEmptyBorder(0, 4, 2, 4));
+		for (String[] action : QUICK_ACTIONS)
+		{
+			String label = action[0];
+			String prompt = action[1];
+			JButton button = new JButton(label);
+			button.setMargin(new java.awt.Insets(1, 6, 1, 6));
+			button.setFont(button.getFont().deriveFont(10f));
+			button.addActionListener(e -> submitQuickAction(prompt));
+			row.add(button);
+		}
+		return row;
+	}
+
+	private void configureGoalsLabel()
+	{
+		goalsLabel.setOpaque(true);
+		goalsLabel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		goalsLabel.setForeground(ColorScheme.LIGHT_GRAY_COLOR);
+		goalsLabel.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createMatteBorder(1, 0, 0, 0, BORDER_COLOR),
+			BorderFactory.createEmptyBorder(4, 8, 4, 8)));
+		goalsLabel.setVisible(false);
+	}
+
+	/** A quick-action button behaves exactly like the player typing that prompt. */
+	private void submitQuickAction(String prompt)
+	{
+		if (listener == null || thinking)
+		{
+			return;
+		}
+		showPending(prompt);
+		listener.onSend(prompt);
 	}
 
 	private JPanel buildChatCard()
