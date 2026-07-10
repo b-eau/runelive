@@ -1,0 +1,22 @@
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# local database
+prisma/*.db
+prisma/*.db-journal
+
+# test artifacts
+test/.tmp/
+
+# env
+.env
+.env.local
+.env.production
+
+# playwright
+e2e/.tmp/
+playwright-report/
+test-results/
