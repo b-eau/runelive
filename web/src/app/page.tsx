@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth";
+import TryForm from "./TryForm";
 
 export default async function Landing() {
   const user = await currentUser();
@@ -28,9 +29,10 @@ export default async function Landing() {
             Sidekick syncs your Old School RuneScape progress straight from RuneLite — stats, quests, bank,
             boss KC — and pairs it with an AI guide that knows your goals.
           </p>
-          <Link href="/signin" className="btn primary" style={{ fontSize: 16, padding: "12px 26px" }}>
-            Get started — it&apos;s free
-          </Link>
+          <TryForm />
+          <p style={{ fontSize: 13, color: "var(--ink-3)", marginTop: 14 }}>
+            No sign-up needed — see your stats and chat with Sidekick right away.
+          </p>
         </section>
         <section className="grid cols-3">
           <div className="card">

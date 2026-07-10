@@ -5,17 +5,9 @@ import { authorizedProfile } from "@/lib/data";
 import { SKILLS, formatXp, levelProgress, titleCase, xpForLevel } from "@/lib/osrs";
 import { xpSeries } from "@/lib/series";
 import TrendChart from "@/components/TrendChart";
+import { SKILL_EMOJI } from "@/components/skillEmoji";
 
 export const metadata = { title: "Skills" };
-
-const SKILL_EMOJI: Record<string, string> = {
-  attack: "⚔️", strength: "💪", defence: "🛡️", ranged: "🏹", prayer: "✨",
-  magic: "🪄", runecrafting: "🌀", construction: "🏠", hitpoints: "❤️",
-  agility: "🏃", herblore: "🧪", thieving: "🗝️", crafting: "🧵", fletching: "🪶",
-  slayer: "💀", hunter: "🪤", mining: "⛏️", smithing: "🔨", fishing: "🎣",
-  cooking: "🍳", firemaking: "🔥", woodcutting: "🪓", farming: "🌱", sailing: "⛵",
-  overall: "🏆",
-};
 
 export default async function SkillsPage({
   params,

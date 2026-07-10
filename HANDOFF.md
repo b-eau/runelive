@@ -13,6 +13,10 @@ fallbacks where there is real uncertainty.
 > `/api/health` route have been added — see §2a and the crossed-off items in
 > §5. Sections 1, 2, 3, 6, and 7 below are otherwise unchanged from the first
 > pass; §4 and §5 have been updated in place.
+>
+> **rev 3 note:** two more increments landed — the **logged-out guest
+> experience** (§2b) and the **Playwright E2E suite** (§2c, closing the E2E
+> item in §4.2). Unit tests now number 61.
 
 ## 1. Vision (the spec, condensed)
 
@@ -173,6 +177,84 @@ with `shutdownNow`, futures cancelled).
   scope can do; enable it in Settings → Branches once the workflows have run
   at least once so the check names are selectable.
 
+### 2b. Guest experience (added in rev 3)
+
+The logged-out hook: the landing hero now carries a username form; submitting
+routes to `/try/<username>`, which renders a rich public-stats view and a
+limited chat. Flow and design decisions:
+
+- **Lookup** (`src/lib/lookup.ts`): Wise Old Man v2 player API first, official
+  hiscores `index_lite.json` as fallback (WOM 404 *or* transport/Cloudflare
+  failure → hiscores; both 404 → honest "not found" with spelling guidance).
+  Normalized into a `GuestSnapshot` (skills, bosses vs. non-boss activities
+  split, account type from WOM when available, combat level computed from
+  skills on the hiscores path, `Runecraft` → `runecrafting` rename). 10-min
+  in-memory TTL cache, bounded; RSN validation (`normalizeUsername`);
+  descriptive User-Agent. **`GUEST_FIXTURES=1`** short-circuits to a built-in
+  deterministic snapshot — this is the E2E seam and also useful offline.
+  Verified live against both sources (WOM: `beaumitch`; fallback routing:
+  a WOM-404 name).
+- **LLM layer** (`src/lib/guest.ts`): deliberately `claude-haiku-4-5` (the
+  user spec: small/cheap for unauthenticated traffic). Two calls: (1)
+  `suggestQueries` — 4 personalized starter questions via structured outputs
+  (`output_config.format` json_schema), falling back to rule-based
+  `heuristicSuggestions` (closest level-up, lowest skill, nearest 99, next
+  boss) when keyless or on any failure; (2) `runGuestChat` — no tools, the
+  snapshot as system context, client-supplied history sanitized server-side
+  (cap 12 messages / 1k chars each, forced alternation), hard
+  `GUEST_TURN_LIMIT = 10` user turns → sign-up nudge. Keyless demo mode
+  returns the context so local dev works.
+- **APIs** (`/api/guest/lookup`, `/api/guest/chat`): unauthenticated but
+  rate-limited per IP (`src/lib/ratelimit.ts` — in-memory sliding window,
+  10/min lookups, 20/min chat; swap for Upstash when multi-instance). Chat
+  re-resolves the username server-side (cache-hit cheap) so context can't be
+  spoofed; the client only supplies the transcript.
+- **UI** (`src/app/try/[username]/GuestExperience.tsx` + `TryForm` on the
+  landing page): loading/error states, stat tiles (total level/XP, bosses
+  fought, next level-up), "Almost there" progress bars (next level + road to
+  99 for 90+ skills), boss KC pills, full 24-skill grid with within-level
+  progress, suggested-query chips that feed the chat, guest chat with
+  turn-limit CTA, and a closing sign-up card. `data-testid` hooks throughout
+  for Playwright.
+
+Open follow-ups: the ironman-specific hiscores endpoints could recover
+account type on the fallback path; suggestions could be cached per username
+to avoid re-paying the haiku call on refresh (currently each lookup call
+regenerates them — cheap, but nonzero).
+
+### 2c. Playwright E2E suite (added in rev 3)
+
+`web/e2e/` + `playwright.config.ts`, `npm run test:e2e`. 11 tests across
+three specs, all green in ~13 s:
+
+- `landing.spec.ts` — hero renders; username form routes into `/try/…`.
+- `guest.spec.ts` — fixture-backed stats view (name, combat, total level,
+  24 skill cells, boss pills, sign-up funnel), suggestion-chip → demo reply
+  grounded in the snapshot, free-form chat round trip, invalid-name error
+  state.
+- `auth-dashboard.spec.ts` — magic-link sign-in via the **`E2E_AUTH_LINK=1`
+  seam** (the `/api/auth/magic` response echoes the link, since tests can't
+  read server stdout; never enable in production), seeded profile cards,
+  overview stats + SVG trend charts, skills tab (Slayer 99), chat demo
+  banner, and the brand-new-user empty state.
+
+Mechanics: `e2e/start-server.sh` boots `next start -p 3100` against a
+throwaway SQLite db (`prisma db push` + seed on every run) with
+`GUEST_FIXTURES=1` and no `ANTHROPIC_API_KEY` — fully hermetic, no external
+network. Playwright's `webServer` health-checks `/api/health`. Runs serially
+(`workers: 1`) because the suite shares one server/db and the in-memory rate
+limiter. **Local dev note:** this sandbox's preinstalled Chromium (1194)
+doesn't match @playwright/test 1.61's pinned build, so the config auto-uses
+`executablePath: /opt/pw-browsers/chromium` when present; CI installs the
+matching browser via `npx playwright install --with-deps chromium` (new `e2e`
+job in `web.yml`, uploads the HTML report as an artifact on failure).
+
+Gotchas encoded in the specs (learned from real failures): use
+`getByText("Bank value", { exact: true })` (the card heading also matches),
+and the Sidekick tab must be selected as `"Sidekick ✨"` — a bare `/Sidekick/`
+regex also matches the "OSRS Sidekick" brand link; always await the URL
+change after clicking a profile card before clicking tabs.
+
 ### NOT yet verified (be honest about this)
 
 - The plugin has **never run against a real game client** (per AGENTS.md this
@@ -255,8 +337,9 @@ with `shutdownNow`, futures cancelled).
      `SidekickSyncPlugin` are good first candidates, they don't touch
      `Client`); RuneLite client itself can't be integration-tested
      headlessly.
-   - E2E: Playwright (Chromium is preinstalled in this environment) for
-     sign-in → dashboard → chat demo flow. Not started.
+   - ~~E2E: Playwright for sign-in → dashboard → chat demo flow~~ **done, see
+     §2c** — 11 tests covering landing, guest flow, and the authed dashboard,
+     wired into CI.
 3. **Live-LLM smoke test**: set `ANTHROPIC_API_KEY`, ask bank/quest/gains
    questions, confirm tool calls hit and answers ground in seeded data.
 4. **Postgres dress rehearsal**: run DEPLOYMENT.md §1 against a free Neon DB,

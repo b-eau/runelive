@@ -33,6 +33,11 @@ demo account **dummymitch** (stats mirrored from the real `beaumitch` via the
 Wise Old Man API) with a main-game profile, a leagues profile, 18 months of
 XP/bank/KC history, quests, diaries, bank, and goals.
 
+**No account needed to try it**: the landing page has a guest mode — enter any
+OSRS username and Sidekick looks it up (Wise Old Man, falling back to the
+official hiscores), renders a stats view with level/99 progress, and opens a
+limited chat seeded with personalized starter questions.
+
 Optional env in `web/.env`:
 
 - `ANTHROPIC_API_KEY` — enables the real Sidekick AI chat + voice assistant
@@ -57,6 +62,18 @@ sign in, and the plugin starts syncing. It sends:
 - **Boss kill counts** — parsed from kill-count chat messages
 - Profile kind (main / leagues / deadman) and account type (ironman etc.) ride
   along with every batch
+
+## Testing
+
+```bash
+cd web
+npm test          # vitest unit suite (throwaway SQLite db)
+npm run test:e2e  # Playwright end-to-end (builds + boots a seeded server)
+```
+
+E2E runs are hermetic: guest lookups use a fixture (`GUEST_FIXTURES=1`), chat
+runs in keyless demo mode, and magic links are echoed through a test-only seam
+(`E2E_AUTH_LINK=1`). Both suites run in CI on every PR touching `web/`.
 
 ## Docs
 

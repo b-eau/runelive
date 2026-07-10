@@ -15,3 +15,8 @@ test/.tmp/
 .env
 .env.local
 .env.production
+
+# playwright
+e2e/.tmp/
+playwright-report/
+test-results/
