@@ -1,0 +1,282 @@
+// OSRS Sidekick — data model
+//
+// Hierarchy: User (email) -> OsrsAccount (one per game login) -> Profile
+// (one per game mode: standard / leagues / deadman ...). All game state
+// hangs off a Profile.
+//
+// Ingestion is event-sourced: the plugin appends immutable Event rows and
+// the server materializes them into fast current-state tables (SkillState,
+// QuestState, ContainerState, KillCountState, DiaryState) plus daily
+// rollups (XpSample, BankValueSample, KcSample) that power trend charts
+// and analytical queries without scanning the event log.
+//
+// Local dev uses SQLite. For production, switch provider to "postgresql"
+// (see DEPLOYMENT.md) — the schema is written to be portable: no enums
+// (string constants instead), JSON payloads stored as strings.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- identity
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+
+  sessions Session[]
+  accounts OsrsAccount[]
+}
+
+model Session {
+  id        String   @id // random 256-bit token
+  userId    String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model MagicLink {
+  token     String    @id
+  email     String
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+}
+
+// ------------------------------------------------------------ game accounts
+
+model OsrsAccount {
+  id          String   @id @default(cuid())
+  userId      String
+  accountHash String   @unique // RuneLite client.getAccountHash(), stable per game account
+  displayName String
+  createdAt   DateTime @default(now())
+
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profiles Profile[]
+  tokens   ApiToken[]
+
+  @@index([userId])
+}
+
+// One row per (account, game mode). kind: STANDARD | LEAGUES | DEADMAN |
+// TOURNAMENT | BETA. accountType: REGULAR | IRONMAN | HARDCORE_IRONMAN |
+// ULTIMATE_IRONMAN | GROUP_IRONMAN | HARDCORE_GROUP_IRONMAN | UNRANKED_GROUP_IRONMAN
+model Profile {
+  id           String    @id @default(cuid())
+  accountId    String
+  kind         String    @default("STANDARD")
+  accountType  String    @default("REGULAR")
+  combatLevel  Int?
+  lastSyncedAt DateTime?
+  createdAt    DateTime  @default(now())
+
+  account OsrsAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  events       Event[]
+  skills       SkillState[]
+  xpSamples    XpSample[]
+  quests       QuestState[]
+  diaries      DiaryState[]
+  containers   ContainerState[]
+  bankSamples  BankValueSample[]
+  killCounts   KillCountState[]
+  kcSamples    KcSample[]
+  goals        Goal[]
+  chatMessages ChatMessage[]
+
+  @@unique([accountId, kind])
+}
+
+// Plugin -> web account linking. The plugin requests a short-lived code,
+// opens the browser; the signed-in user claims the code, which mints an
+// ApiToken the plugin then polls for.
+model LinkCode {
+  code        String    @id
+  pollSecret  String // proves the poller is the client that created the code
+  accountHash String
+  displayName String
+  status      String    @default("PENDING") // PENDING | CLAIMED | EXPIRED
+  apiToken    String?
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+  claimedAt   DateTime?
+}
+
+model ApiToken {
+  token      String    @id // random 256-bit token, sent as Bearer by the plugin
+  accountId  String
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  account OsrsAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+}
+
+// ------------------------------------------------------------- event log
+
+// Append-only. payload is a JSON string whose shape depends on type:
+// SKILLS, QUESTS, DIARIES, BANK, INVENTORY, EQUIPMENT, KILL_COUNT,
+// LEVEL_UP, LOGIN. dedupeKey lets the plugin retry batches idempotently.
+model Event {
+  id         String   @id @default(cuid())
+  profileId  String
+  type       String
+  payload    String
+  dedupeKey  String?  @unique
+  occurredAt DateTime
+  receivedAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, type, occurredAt])
+}
+
+// ------------------------------------------- materialized current state
+
+model SkillState {
+  profileId String
+  skill     String // attack, defence, ... , overall
+  xp        BigInt
+  level     Int
+  updatedAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, skill])
+}
+
+model QuestState {
+  profileId String
+  quest     String
+  state     String // NOT_STARTED | IN_PROGRESS | FINISHED
+  updatedAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, quest])
+}
+
+model DiaryState {
+  profileId String
+  area      String
+  tier      String // EASY | MEDIUM | HARD | ELITE
+  completed Boolean  @default(false)
+  updatedAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, area, tier])
+}
+
+// Latest snapshot of an item container. items is a JSON string:
+// [{"id": 4151, "qty": 1}, ...]
+model ContainerState {
+  profileId String
+  container String // BANK | INVENTORY | EQUIPMENT
+  items     String
+  value     BigInt   @default(0)
+  updatedAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, container])
+}
+
+model KillCountState {
+  profileId String
+  boss      String
+  kc        Int
+  updatedAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, boss])
+}
+
+// ------------------------------------------------------- daily rollups
+
+// Last-observed XP per (profile, skill, UTC day). Day-over-day diffs give
+// "XP gained per day" charts and range analytics cheaply.
+model XpSample {
+  profileId String
+  skill     String
+  date      DateTime // UTC midnight of the sampled day
+  xp        BigInt
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, skill, date])
+  @@index([profileId, date])
+}
+
+model BankValueSample {
+  profileId String
+  date      DateTime
+  value     BigInt
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, date])
+}
+
+model KcSample {
+  profileId String
+  boss      String
+  date      DateTime
+  kc        Int
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, boss, date])
+}
+
+// ----------------------------------------------------------- product bits
+
+// The user's stated mission for a profile ("untrim slayer cape", "max
+// without bonds"). Steers chat + proactive recommendations.
+model Goal {
+  id        String   @id @default(cuid())
+  profileId String
+  title     String
+  notes     String?
+  status    String   @default("ACTIVE") // ACTIVE | DONE | ARCHIVED
+  createdAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, status])
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  profileId String
+  role      String // user | assistant
+  content   String
+  createdAt DateTime @default(now())
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@index([profileId, createdAt])
+}
+
+// Cached Grand Exchange guide prices (OSRS wiki), used to value banks.
+model ItemPrice {
+  itemId    Int      @id
+  name      String
+  price     Int
+  updatedAt DateTime @default(now())
+}
