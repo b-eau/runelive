@@ -1,11 +1,18 @@
 # OSRS Sidekick — Engineering Handoff
 
-_Last updated: 2026-07-10. Branch: `claude/osrs-sidekick-web-app-215qts`._
+_Last updated: 2026-07-10 (rev 2). Branch: `claude/osrs-sidekick-web-app-215qts`,
+PR #3 (draft)._
 
 This document is the onboarding brief for the engineer taking over. It covers
 the product vision, exactly what exists and is verified today, and the
 remaining work split into features, testing, and productionization — with
 fallbacks where there is real uncertainty.
+
+> **rev 2 note:** since the first handoff pass, a unit test suite (vitest, 50
+> tests), CI for both `web/` and `plugin/`, a `LICENSE` file, and an
+> `/api/health` route have been added — see §2a and the crossed-off items in
+> §5. Sections 1, 2, 3, 6, and 7 below are otherwise unchanged from the first
+> pass; §4 and §5 have been updated in place.
 
 ## 1. Vision (the spec, condensed)
 
@@ -32,9 +39,12 @@ OSRS Sidekick is a standalone web application + a lightweight RuneLite plugin:
 
 ```
 web/       Next.js 15 (App Router, TS) + Prisma. The entire backend + PWA.
+           web/test/ — vitest unit suite (50 tests, see §2a).
 plugin/    RuneLite plugin (Gradle, Java 11 target). Compiles clean.
+.github/workflows/  CI: web.yml (build+test), plugin.yml (gradle build).
 ARCHITECTURE.md  Data model, ingestion pipeline, scaling math, growth path.
 DEPLOYMENT.md    Vercel + Neon + Resend + Google OAuth instructions.
+LICENSE          BSD-2-Clause (required for RuneLite Plugin Hub submission).
 README.md        Quick start for both halves.
 ```
 
@@ -126,6 +136,43 @@ with `shutdownNow`, futures cancelled).
   reply containing real seeded context.
 - Plugin: `gradle build -x test` green.
 
+### 2a. Automated tests + CI (added in rev 2)
+
+- **`web/test/`** (vitest): `osrs.test.ts` (XP curve, combat level, formatters),
+  `analytics.test.ts` (bucketing + delta math, pure functions extracted to
+  `src/lib/analytics.ts`), `materialize.test.ts` (every event type, overall-XP
+  synthesis, combat-level trigger, container pricing, and — importantly —
+  `ingestEvents` idempotency: proves a retried batch with a seen `dedupeKey`
+  ingests 0 and doesn't double-apply). 50 tests, all passing. Uses a real
+  throwaway SQLite file (`prisma db push` in `test/globalSetup.ts`, no
+  mocking) with a `test/fixtures.ts` helper that builds a full
+  User→OsrsAccount→Profile chain per test (SQLite FK enforcement is on).
+  `npm test` runs it; `.github/workflows/web.yml` runs it on every PR/push
+  touching `web/**`.
+- **`.github/workflows/plugin.yml`**: `./gradlew build -x test` on Java 11
+  (temurin) via `gradle/actions/setup-gradle`, on every PR/push touching
+  `plugin/**`. (Note: in *this* sandboxed dev environment the gradlew
+  wrapper's distribution download hit a proxy 403 and the system-installed
+  Gradle 8.14.3 was used instead to verify the build locally — real GitHub
+  Actions runners have unrestricted internet and the wrapper should work
+  there without modification. If it doesn't, swap `./gradlew` for a
+  `gradle` step using `actions/setup-java` + a plain `gradle` install.)
+- **`LICENSE`** (BSD-2-Clause, root) — was flagged missing for Plugin Hub
+  submission; now present. Copyright holder is written as "OSRS Sidekick
+  Contributors" as a placeholder — swap in the real legal name/entity before
+  any formal hub submission if that matters to you.
+- **`/api/health`** — unauthenticated `SELECT 1` liveness probe, `200`/`503`.
+  Wire this into whatever uptime monitor you pick (§5.6 still open: Sentry +
+  alerting on top of this).
+- **What CI does *not* yet do**: no lint step (no ESLint config exists yet —
+  `next lint` would prompt to scaffold one interactively, which would hang a
+  CI runner; see §5.4, still open), no Postgres matrix (tests run against
+  SQLite only — see §4.4, still open), no Playwright E2E (see §4.2, still
+  open), and branch protection requiring these checks has **not** been
+  configured — that's a repo-admin action outside what this session's GitHub
+  scope can do; enable it in Settings → Branches once the workflows have run
+  at least once so the check names are selectable.
+
 ### NOT yet verified (be honest about this)
 
 - The plugin has **never run against a real game client** (per AGENTS.md this
@@ -191,17 +238,25 @@ with `shutdownNow`, futures cancelled).
    skills row appears on login; open bank → bank page populates; gain a level
    → LEVEL_UP + skills sync; kill any boss / check KC message parses;
    world-hop to a leagues/DMM world → second profile appears.
-2. **Automated tests** (none exist yet — deliberate v1 tradeoff):
-   - *Highest value first*: unit tests for `materialize.ts` (each event type,
-     idempotency, overall-XP synthesis, day bucketing) and the analytics
-     bucketing. Vitest + a throwaway SQLite file is enough; no mocking needed.
+2. **Automated tests** — unit-level done (§2a); still open:
+   - ~~Unit tests for `materialize.ts` and analytics bucketing~~ **done, see
+     §2a** (50 vitest tests, idempotency included).
    - API integration tests: the exact curl choreography in §2 ("Verified")
-     codified — auth → link → ingest → read back. Supertest against
-     `next start` or route-handler unit calls.
-   - Plugin: JUnit for the KC regex and payload builders (pure functions);
-     RuneLite client itself can't be integration-tested headlessly.
+     codified — auth → link → ingest → read back, as a real HTTP round trip
+     rather than unit calls into route handlers (which is what the vitest
+     suite does today, minus the HTTP layer itself — the auth cookie
+     handling, header parsing, and status codes in `route.ts` files aren't
+     covered). Supertest (or plain `fetch`) against a `next start`
+     instance is the natural fit; boot it in a `beforeAll`, seed a throwaway
+     profile via the fixtures pattern from `test/fixtures.ts`, and drive it
+     with real HTTP calls the way the earlier manual verification pass did.
+   - Plugin: JUnit for the KC regex and payload builders (pure functions —
+     `KILL_COUNT_PATTERN` and the boss-name-to-slug transform in
+     `SidekickSyncPlugin` are good first candidates, they don't touch
+     `Client`); RuneLite client itself can't be integration-tested
+     headlessly.
    - E2E: Playwright (Chromium is preinstalled in this environment) for
-     sign-in → dashboard → chat demo flow.
+     sign-in → dashboard → chat demo flow. Not started.
 3. **Live-LLM smoke test**: set `ANTHROPIC_API_KEY`, ask bank/quest/gains
    questions, confirm tool calls hit and answers ground in seeded data.
 4. **Postgres dress rehearsal**: run DEPLOYMENT.md §1 against a free Neon DB,
@@ -214,16 +269,17 @@ with `shutdownNow`, futures cancelled).
 
 ## 5. Productionization & maintainability
 
-None of this exists yet; suggested order:
+Suggested order; items 1 and 8 (partially) are now done:
 
-1. **CI (GitHub Actions)** — two workflows:
-   - `web.yml`: on PR + main, paths `web/**`: `npm ci`, `prisma generate`,
-     `next build`, `npm test` (once tests exist), optionally `prisma migrate
-     diff` to catch drift.
-   - `plugin.yml`: on PR + main, paths `plugin/**`: `gradle build` with Java
-     11 toolchain (temurin), cache Gradle. This also acts as the RuneLite
-     Plugin Hub pre-submission check.
-   Branch protection on `master` requiring both.
+1. ~~**CI (GitHub Actions)**~~ **done** — `.github/workflows/web.yml` (npm ci,
+   prisma generate, next build, npm test) and `.github/workflows/plugin.yml`
+   (gradle build with Java 11 temurin), both path-scoped and running on PR +
+   push to `master`. Still open: **branch protection on `master` requiring
+   both checks** — this needs repo-admin access this session's GitHub scope
+   doesn't have; do it in Settings → Branches → Branch protection rules once
+   the workflows have run at least once (so the check names show up in the
+   picker). Also still open: a `prisma migrate diff`-based drift check once
+   the schema is on Postgres (§4.4) — not meaningful against SQLite dev.
 2. **Deployments**: connect the repo to Vercel with Root Directory `web/` —
    this gives preview deployments per PR (status auto-posted on the PR) and
    production deploys on merge to `master` for free. Add
@@ -241,21 +297,27 @@ None of this exists yet; suggested order:
    regenerate `prisma/migrations` for Postgres **once** (DEPLOYMENT.md) and
    from then on only additive `migrate dev` → `migrate deploy`. Never edit
    applied migrations.
-6. **Observability**: Vercel gives request logs; add Sentry (or Vercel's
-   error monitoring) for `/api/ingest` and `/api/chat` failures, and a
-   `/api/health` route (DB ping) for uptime checks. Log-based alert on
-   ingest 5xx rate.
+6. **Observability**: ~~add a `/api/health` route (DB ping) for uptime
+   checks~~ **done** (`GET /api/health` → `{status, db}`, 200/503). Still
+   open: Vercel gives request logs, but add Sentry (or Vercel's error
+   monitoring) for `/api/ingest` and `/api/chat` failures, and a log-based
+   alert on ingest 5xx rate, and point an actual uptime monitor at
+   `/api/health`.
 7. **Rate limiting**: `/api/auth/magic` (email spam) and `/api/link/start`
    (code farming) should get simple per-IP limits — Upstash Ratelimit or
-   Vercel Firewall rules; both are drop-in.
+   Vercel Firewall rules; both are drop-in. Not started.
 8. **Plugin distribution**: for real users, submit to the RuneLite Plugin Hub
    (repo must contain only the plugin at root — either split `plugin/` to its
    own repo at submission time, or keep a subtree mirror; the code already
    follows the hub rules: opt-in third-party-server warning, no reflection,
-   Java 11, gameval constants, BSD-compatible license needed — **add a
-   LICENSE file (BSD-2) before submission**, it's currently missing).
+   Java 11, gameval constants). ~~BSD-compatible license needed — add a
+   LICENSE file (BSD-2) before submission~~ **done** — root `LICENSE`
+   (BSD-2-Clause). Still open: the copyright line says "OSRS Sidekick
+   Contributors" as a placeholder; update it if the hub submission needs a
+   real legal name, and do the actual repo-split/subtree-mirror step.
 9. **Chat cost control**: per-user daily message cap (count `ChatMessage`
    rows) before calling the API; `max_iterations` is already bounded at 8.
+   Not started.
 
 ## 6. Known uncertainties & fallbacks
 
@@ -276,6 +338,7 @@ None of this exists yet; suggested order:
 cd web && npm install && cp .env.example .env
 npx prisma migrate dev            # migrate + seed (rerunnable: npm run db:reset)
 npm run dev                       # sign in as beaumitch@gmail.com; link prints to console
+npm test                          # vitest — spins up its own throwaway sqlite db
 
 # stable dev ingest token (seeded): dev-ingest-token-dummymitch
 curl -X POST localhost:3000/api/ingest \

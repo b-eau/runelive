@@ -13,18 +13,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { authorizedProfile } from "@/lib/data";
+import { buildSeries, type SeriesRow } from "@/lib/analytics";
 
-type Row = { date: Date; value: bigint | number };
-
-function bucketKey(d: Date, granularity: string): string {
-  if (granularity === "month") return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`;
-  if (granularity === "week") {
-    const day = new Date(d);
-    day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7)); // Monday
-    return day.toISOString().slice(0, 10);
-  }
-  return d.toISOString().slice(0, 10);
-}
+type Row = SeriesRow;
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ profileId: string }> }) {
   const { profileId } = await ctx.params;
@@ -66,15 +57,6 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ profileId: 
     return NextResponse.json({ error: `Unknown metric ${metric}` }, { status: 400 });
   }
 
-  // Bucket: last observation per bucket wins (values are cumulative).
-  const buckets = new Map<string, number>();
-  for (const r of rows) buckets.set(bucketKey(r.date, granularity), Number(r.value));
-
-  const series: { date: string; value: number; delta: number }[] = [];
-  let prev: number | null = null;
-  for (const [date, value] of [...buckets.entries()].sort()) {
-    series.push({ date, value, delta: prev === null ? 0 : value - prev });
-    prev = value;
-  }
+  const series = buildSeries(rows, granularity);
   return NextResponse.json({ metric, granularity, series });
 }
