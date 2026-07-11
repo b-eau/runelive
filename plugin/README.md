@@ -20,13 +20,14 @@ the standard third-party-server warning).
 ## Linking your account
 
 1. Log into the game.
-2. Open the **OSRS Sidekick** side panel and click **Link account**.
+2. In the plugin's settings, tick **Link account** (the box unticks itself).
 3. Your browser opens the Sidekick site with a one-time code pre-filled; sign
    in (magic link or Google) and click **Link this account**.
 4. The plugin picks up the credential within a few seconds and starts syncing.
+   Progress is reported in the game chat.
 
 No manual copy/pasting is needed; if the browser doesn't open, visit
-`<server>/link` and type the 8-character code shown in the panel.
+`<server>/link` and type the 8-character code shown in game chat.
 
 ## Development
 

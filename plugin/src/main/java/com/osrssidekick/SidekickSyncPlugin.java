@@ -37,11 +37,9 @@ import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-import net.runelite.client.ui.ClientToolbar;
-import net.runelite.client.ui.NavigationButton;
-import net.runelite.client.util.ImageUtil;
 import net.runelite.client.util.LinkBrowser;
 import net.runelite.client.util.Text;
 
@@ -75,12 +73,6 @@ public class SidekickSyncPlugin extends Plugin
 	@Inject
 	private ConfigManager configManager;
 
-	@Inject
-	private ClientToolbar clientToolbar;
-
-	private SidekickPanel panel;
-	private NavigationButton navButton;
-
 	private ScheduledExecutorService executor;
 	private ScheduledFuture<?> flushFuture;
 	private ScheduledFuture<?> heartbeatFuture;
@@ -110,16 +102,6 @@ public class SidekickSyncPlugin extends Plugin
 		executor = Executors.newSingleThreadScheduledExecutor();
 		flushFuture = executor.scheduleWithFixedDelay(this::flush, 10, 10, TimeUnit.SECONDS);
 		heartbeatFuture = executor.scheduleWithFixedDelay(this::heartbeat, 60, 60, TimeUnit.SECONDS);
-
-		panel = new SidekickPanel(this);
-		navButton = NavigationButton.builder()
-			.tooltip("OSRS Sidekick")
-			.icon(ImageUtil.loadImageResource(getClass(), "/sidekick_icon.png"))
-			.priority(7)
-			.panel(panel)
-			.build();
-		clientToolbar.addNavigation(navButton);
-		updatePanel();
 		log.info("OSRS Sidekick Sync started");
 	}
 
@@ -142,7 +124,6 @@ public class SidekickSyncPlugin extends Plugin
 		{
 			executor.shutdownNow();
 		}
-		clientToolbar.removeNavigation(navButton);
 		pendingEvents.clear();
 		lastLevels.clear();
 		lastContainerSyncAt.clear();
@@ -185,7 +166,23 @@ public class SidekickSyncPlugin extends Plugin
 		refreshIdentity();
 		enqueueSkillsSnapshot();
 		enqueueQuestSnapshot();
-		updatePanel();
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event)
+	{
+		if (!SidekickSyncConfig.GROUP.equals(event.getGroup()) || !"linkAccount".equals(event.getKey()))
+		{
+			return;
+		}
+		if (!Boolean.parseBoolean(event.getNewValue()))
+		{
+			return;
+		}
+		// The checkbox is a momentary "button": untick it right away, then run
+		// the link flow (progress is reported via game chat messages).
+		configManager.setConfiguration(SidekickSyncConfig.GROUP, "linkAccount", false);
+		beginLinking();
 	}
 
 	@Subscribe
@@ -463,11 +460,7 @@ public class SidekickSyncPlugin extends Plugin
 		}
 
 		api.ingest(token, profileKind, accountType, displayName, batch,
-			() ->
-			{
-				flushing.set(false);
-				updatePanel();
-			},
+			() -> flushing.set(false),
 			reason ->
 			{
 				if (!"unauthorized".equals(reason))
@@ -475,7 +468,6 @@ public class SidekickSyncPlugin extends Plugin
 					pendingEvents.addAll(batch); // retry later; dedupeKey keeps it idempotent
 				}
 				flushing.set(false);
-				updatePanel();
 			});
 	}
 
@@ -496,24 +488,47 @@ public class SidekickSyncPlugin extends Plugin
 
 	// -------------------------------------------------------------- linking
 
-	void beginLinking()
+	/** Reports link progress in game chat (and the log for the login screen edge). */
+	private void status(String message)
 	{
+		log.debug("link status: {}", message);
+		clientThread.invoke(() ->
+		{
+			if (client.getGameState() == GameState.LOGGED_IN)
+			{
+				client.addChatMessage(ChatMessageType.CONSOLE, "", "Sidekick: " + message, null);
+			}
+		});
+	}
+
+	private void beginLinking()
+	{
+		if (!config.syncEnabled())
+		{
+			status("Enable syncing in the plugin settings first, then tick Link account again.");
+			return;
+		}
+		if (apiToken() != null)
+		{
+			status("This character is already linked — open " + config.backendUrl() + " to see your dashboard.");
+			return;
+		}
 		long hash = accountHash;
 		String name = displayName;
 		if (hash == -1 || name == null)
 		{
-			panel.setStatus("Log in to the game first, then link.");
+			status("Log in to the game first, then tick Link account again.");
 			return;
 		}
-		panel.setStatus("Contacting Sidekick…");
+		status("Contacting Sidekick…");
 		api.startLink(hash, name,
 			start ->
 			{
 				LinkBrowser.browse(start.getLinkUrl());
-				panel.setStatus("Complete the sign-in in your browser.\nCode: " + start.getCode());
+				status("Complete the sign-in in your browser. Code: " + start.getCode());
 				pollForToken(start, hash, 0);
 			},
-			error -> panel.setStatus(error));
+			this::status);
 	}
 
 	private void pollForToken(SidekickApiClient.LinkStart start, long hash, int attempt)
@@ -529,8 +544,7 @@ public class SidekickSyncPlugin extends Plugin
 					if (token != null)
 					{
 						configManager.setConfiguration(SidekickSyncConfig.GROUP, "token." + hash, token);
-						panel.setStatus("Linked! Syncing is ready.");
-						updatePanel();
+						status("Linked! Syncing is active.");
 						// Push a first full snapshot right away.
 						clientThread.invoke(() ->
 						{
@@ -544,38 +558,6 @@ public class SidekickSyncPlugin extends Plugin
 						pollForToken(start, hash, attempt + 1);
 					}
 				},
-				error ->
-				{
-					panel.setStatus(error);
-					updatePanel();
-				}), 3, TimeUnit.SECONDS);
-	}
-
-	void openDashboard()
-	{
-		LinkBrowser.browse(config.backendUrl());
-	}
-
-	String currentDisplayName()
-	{
-		return displayName;
-	}
-
-	boolean isLinked()
-	{
-		return apiToken() != null;
-	}
-
-	boolean isSyncEnabled()
-	{
-		return config.syncEnabled();
-	}
-
-	private void updatePanel()
-	{
-		if (panel != null)
-		{
-			panel.refresh();
-		}
+				this::status), 3, TimeUnit.SECONDS);
 	}
 }

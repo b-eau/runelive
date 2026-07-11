@@ -39,8 +39,8 @@ export default async function DashboardPage() {
           <div className="card empty">
             <p style={{ fontSize: 15, color: "var(--ink-2)" }}>No accounts linked yet.</p>
             <p>
-              Install the <strong>OSRS Sidekick</strong> plugin in RuneLite, open its side panel, and click{" "}
-              <strong>Link account</strong> — or start right now with just your username.
+              Install the <strong>OSRS Sidekick</strong> plugin in RuneLite and tick{" "}
+              <strong>Link account</strong> in its settings — or start right now with just your username.
             </p>
             <Link href="/link" className="btn primary" style={{ marginTop: 12 }}>
               Link an account

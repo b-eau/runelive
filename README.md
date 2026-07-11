@@ -52,8 +52,8 @@ cd plugin
 ./gradlew run   # dev RuneLite client with the plugin loaded
 ```
 
-In RuneLite: enable **OSRS Sidekick Sync** in plugin settings (it's opt-in),
-open the Sidekick side panel, click **Link account** — a browser opens, you
+In RuneLite: enable **OSRS Sidekick Sync** in plugin settings (it's opt-in)
+and tick **Link account** in the same settings panel — a browser opens, you
 sign in, and the plugin starts syncing. It sends:
 
 - **Skills** — on login, on level-up, and every 15 min when total XP changed

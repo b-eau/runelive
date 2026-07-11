@@ -24,8 +24,8 @@ export default async function LinkPage({
     <div className="card">
       <h2 style={{ fontSize: 18 }}>Link your RuneLite plugin</h2>
       <p className="sub">
-        Confirm the code shown in your OSRS Sidekick plugin panel to connect this game account with
-        full syncing — bank, quests, gear, and progress over time.
+        Confirm the code shown in your game chat after ticking <strong>Link account</strong> in the
+        plugin settings — full syncing covers bank, quests, gear, and progress over time.
       </p>
       <LinkClaim initialCode={params.code ?? ""} />
     </div>

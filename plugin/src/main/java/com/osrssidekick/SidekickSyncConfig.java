@@ -31,4 +31,15 @@ public interface SidekickSyncConfig extends Config
 	{
 		return "http://localhost:3000";
 	}
+
+	@ConfigItem(
+		keyName = "linkAccount",
+		name = "Link account",
+		description = "While logged in to the game, tick this to connect the current character to your Sidekick dashboard — a browser window opens to finish sign-in. The box unticks itself. Requires syncing to be enabled.",
+		position = 2
+	)
+	default boolean linkAccount()
+	{
+		return false;
+	}
 }
