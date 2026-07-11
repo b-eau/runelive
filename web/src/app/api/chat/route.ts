@@ -38,12 +38,14 @@ export async function POST(req: NextRequest) {
     history.unshift({ role: "user", content: trimmed });
   }
 
+  const startedAt = Date.now();
   try {
     const reply = await runSidekick(profileId, history);
+    console.log(`sidekick turn completed in ${Date.now() - startedAt}ms`);
     await db.chatMessage.create({ data: { profileId, role: "assistant", content: reply } });
     return NextResponse.json({ reply });
   } catch (e) {
-    console.error("sidekick error", e);
+    console.error(`sidekick error after ${Date.now() - startedAt}ms`, e);
     return NextResponse.json(
       { error: "Sidekick hit a snag answering that. Try again in a moment." },
       { status: 500 },

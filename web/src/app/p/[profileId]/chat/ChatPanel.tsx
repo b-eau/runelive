@@ -77,13 +77,23 @@ export default function ChatPanel({
       setBusy(true);
       setMessages((m) => [...m, { id: `local-${Date.now()}`, role: "user", content }]);
       try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ profileId, message: content }),
-        });
-        const body = await res.json();
-        const reply: string = res.ok ? body.reply : (body.error ?? "Something went wrong.");
+        // Timeouts and non-JSON gateway errors must surface as a reply
+        // bubble — an uncaught rejection here leaves the chat looking frozen.
+        let reply: string;
+        try {
+          const res = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ profileId, message: content }),
+            signal: AbortSignal.timeout(118_000),
+          });
+          const body = await res.json().catch(() => ({}));
+          reply = res.ok
+            ? (body.reply ?? "Something went wrong.")
+            : (body.error ?? "Sidekick hit a snag answering that. Try again in a moment.");
+        } catch {
+          reply = "That took too long and timed out — try asking again, or break the question up.";
+        }
         setMessages((m) => [...m, { id: `local-${Date.now()}-a`, role: "assistant", content: reply }]);
         if (spoken && "speechSynthesis" in window) {
           setVoiceMode("speaking");

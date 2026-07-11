@@ -6,7 +6,14 @@
 // function calling and require them back verbatim on later turns, so the
 // tool loop pushes each model turn into the conversation unmodified.
 
-export const GEMINI_MODEL = process.env.GEMINI_MODEL ?? "gemini-3.5-flash";
+// `||` not `??`: .env templates leave these as empty strings.
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+
+// Thinking is on by default and slow; "low" keeps chat turns snappy. The
+// sidekick tool loop makes several sequential calls per turn, so per-call
+// latency compounds — see REQUEST_TIMEOUT_MS / deadlineMs below.
+const THINKING_LEVEL = process.env.GEMINI_THINKING_LEVEL || "low";
+const REQUEST_TIMEOUT_MS = 45_000;
 
 export function geminiEnabled(): boolean {
   return !!process.env.GEMINI_API_KEY;
@@ -31,17 +38,31 @@ type GeminiPart = {
 type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
 
 async function generateContent(body: Record<string, unknown>): Promise<GeminiContent | null> {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
-    {
+  const call = async (payload: Record<string, unknown>) =>
+    fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-goog-api-key": process.env.GEMINI_API_KEY!,
       },
-      body: JSON.stringify(body),
-    },
-  );
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+
+  let res = await call(body);
+  if (res.status === 400) {
+    // Thinking knobs drift across model generations; if the API rejects
+    // ours, degrade to default thinking rather than failing the turn.
+    const text = await res.text();
+    const config = body.generationConfig as Record<string, unknown> | undefined;
+    if (/thinking/i.test(text) && config?.thinkingConfig) {
+      const { thinkingConfig: _dropped, ...rest } = config;
+      console.warn("Gemini rejected thinkingConfig, retrying without it");
+      res = await call({ ...body, generationConfig: rest });
+    } else {
+      throw new Error(`Gemini API 400: ${text.slice(0, 500)}`);
+    }
+  }
   if (!res.ok) {
     throw new Error(`Gemini API ${res.status}: ${(await res.text()).slice(0, 500)}`);
   }
@@ -67,7 +88,11 @@ export async function runGeminiChat(opts: {
   tools?: RunnableTool[];
   maxTokens?: number;
   maxIterations?: number;
+  /** Overall turn budget; the tool loop stops starting new calls near it. */
+  deadlineMs?: number;
 }): Promise<string> {
+  const startedAt = Date.now();
+  const deadlineMs = opts.deadlineMs ?? 90_000;
   const contents: GeminiContent[] = opts.history.map((m) => ({
     role: m.role === "assistant" ? "model" : "user",
     parts: [{ text: m.content }],
@@ -85,11 +110,19 @@ export async function runGeminiChat(opts: {
   }));
 
   for (let i = 0; i < (opts.maxIterations ?? 8); i++) {
+    // Only start a call that can still finish inside the turn budget.
+    if (Date.now() - startedAt > deadlineMs - REQUEST_TIMEOUT_MS) {
+      console.warn(`Gemini tool loop hit the ${deadlineMs}ms turn deadline after ${i} calls`);
+      break;
+    }
     const content = await generateContent({
       systemInstruction: { parts: [{ text: opts.system }] },
       contents,
       ...(declarations.length > 0 ? { tools: [{ functionDeclarations: declarations }] } : {}),
-      generationConfig: { maxOutputTokens: opts.maxTokens ?? 4096 },
+      generationConfig: {
+        maxOutputTokens: opts.maxTokens ?? 4096,
+        thinkingConfig: { thinkingLevel: THINKING_LEVEL },
+      },
     });
     if (!content?.parts?.length) return textOf(content);
 
@@ -134,6 +167,7 @@ export async function runGeminiJson<T>(opts: {
       maxOutputTokens: opts.maxTokens ?? 2048,
       responseMimeType: "application/json",
       responseJsonSchema: opts.schema,
+      thinkingConfig: { thinkingLevel: THINKING_LEVEL },
     },
   });
   return JSON.parse(textOf(content)) as T;
