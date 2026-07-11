@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { currentUser, hashToken, newToken } from "@/lib/auth";
+import { rsnAccountHash } from "@/lib/rsnLink";
 
 export async function POST(req: NextRequest) {
   const user = await currentUser();
@@ -26,11 +27,24 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // If the user previously linked this character by username alone, upgrade
+  // the placeholder in place so its profile and history carry over.
+  const placeholder = existing
+    ? null
+    : await db.osrsAccount.findFirst({
+        where: { userId: user.id, accountHash: rsnAccountHash(link.displayName) },
+      });
+
   const account =
     existing ??
-    (await db.osrsAccount.create({
-      data: { userId: user.id, accountHash: link.accountHash, displayName: link.displayName },
-    }));
+    (placeholder
+      ? await db.osrsAccount.update({
+          where: { id: placeholder.id },
+          data: { accountHash: link.accountHash, displayName: link.displayName },
+        })
+      : await db.osrsAccount.create({
+          data: { userId: user.id, accountHash: link.accountHash, displayName: link.displayName },
+        }));
   if (existing && existing.displayName !== link.displayName) {
     await db.osrsAccount.update({ where: { id: existing.id }, data: { displayName: link.displayName } });
   }

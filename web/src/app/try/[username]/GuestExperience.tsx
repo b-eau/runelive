@@ -67,6 +67,11 @@ const SOURCE_LABELS: Record<string, string> = {
   fixture: "sample data",
 };
 
+/** Sign-up CTA target: after auth, land on /link with the username prefilled. */
+function signupHref(username: string): string {
+  return `/signin?next=${encodeURIComponent(`/link?username=${encodeURIComponent(username)}`)}`;
+}
+
 export default function GuestExperience({ username }: { username: string }) {
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState("");
@@ -277,10 +282,11 @@ function GuestDashboard({ snapshot, suggestions }: { snapshot: Snapshot; suggest
       <div className="card" style={{ textAlign: "center", padding: 28 }}>
         <h3 style={{ fontSize: 17 }}>This is just your public hiscores.</h3>
         <p className="sub" style={{ maxWidth: 520, margin: "6px auto 16px" }}>
-          Sign up and link the free RuneLite plugin to give Sidekick your bank, quest log, gear, and
-          progress over time — plus goals-aware advice and a voice assistant.
+          Sign up to save this account to your dashboard in one click — then link the free RuneLite
+          plugin for your bank, quest log, gear, and progress over time, plus goals-aware advice and
+          a voice assistant.
         </p>
-        <Link href="/signin" className="btn primary" style={{ fontSize: 15, padding: "11px 24px" }}>
+        <Link href={signupHref(snapshot.username)} className="btn primary" style={{ fontSize: 15, padding: "11px 24px" }}>
           Create your free account
         </Link>
       </div>
@@ -355,7 +361,7 @@ function GuestChat({ snapshot, suggestions }: { snapshot: Snapshot; suggestions:
         {busy && <div className="msg assistant">Thinking…</div>}
         {limitReached && (
           <div style={{ textAlign: "center", padding: "8px 0" }}>
-            <Link href="/signin" className="btn primary">
+            <Link href={signupHref(snapshot.username)} className="btn primary">
               Sign up to keep chatting
             </Link>
           </div>

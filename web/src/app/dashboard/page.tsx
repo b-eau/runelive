@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/auth";
 import { userAccounts } from "@/lib/data";
 import { ACCOUNT_TYPE_LABELS, PROFILE_KIND_LABELS } from "@/lib/osrs";
+import { isRsnLinked } from "@/lib/rsnLink";
 
 export const metadata = { title: "Dashboard" };
 
@@ -32,15 +33,18 @@ export default async function DashboardPage() {
       <main className="shell">
         <h1 style={{ fontSize: 24, margin: "28px 0 4px", letterSpacing: "-0.02em" }}>Your characters</h1>
         <p className="sub" style={{ color: "var(--ink-3)", marginBottom: 20 }}>
-          Pick a profile, or link a new account from the RuneLite plugin.
+          Pick a profile, or <Link href="/link">link another account</Link>.
         </p>
         {accounts.length === 0 ? (
           <div className="card empty">
             <p style={{ fontSize: 15, color: "var(--ink-2)" }}>No accounts linked yet.</p>
             <p>
               Install the <strong>OSRS Sidekick</strong> plugin in RuneLite, open its side panel, and click{" "}
-              <strong>Link account</strong>.
+              <strong>Link account</strong> — or start right now with just your username.
             </p>
+            <Link href="/link" className="btn primary" style={{ marginTop: 12 }}>
+              Link an account
+            </Link>
           </div>
         ) : (
           <div className="grid cols-2">
@@ -61,6 +65,7 @@ export default async function DashboardPage() {
                         <span className="pill gold">{PROFILE_KIND_LABELS[profile.kind] ?? profile.kind}</span>
                         <span className="pill">{ACCOUNT_TYPE_LABELS[profile.accountType] ?? profile.accountType}</span>
                         {profile.combatLevel && <span className="pill">Combat {profile.combatLevel}</span>}
+                        {isRsnLinked(account.accountHash) && <span className="pill">Hiscores only</span>}
                       </div>
                     </div>
                     <span style={{ color: "var(--ink-3)" }}>→</span>

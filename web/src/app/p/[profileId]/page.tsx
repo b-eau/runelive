@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { authorizedProfile } from "@/lib/data";
+import { isRsnLinked } from "@/lib/rsnLink";
 import { formatGp, formatXp, titleCase } from "@/lib/osrs";
 import { bankSeries, recentGains, xpSeries } from "@/lib/series";
 import TrendChart from "@/components/TrendChart";
@@ -30,6 +32,23 @@ export default async function OverviewPage({ params }: { params: Promise<{ profi
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {isRsnLinked(profile.account.accountHash) && (
+        <div
+          style={{
+            background: "color-mix(in oklab, var(--warning) 12%, transparent)",
+            border: "1px solid color-mix(in oklab, var(--warning) 35%, transparent)",
+            borderRadius: 10,
+            padding: "8px 12px",
+            fontSize: 12.5,
+          }}
+        >
+          Linked by username — skills and boss KCs come from the public hiscores.{" "}
+          <Link href="/link" style={{ fontWeight: 650 }}>
+            Connect the RuneLite plugin
+          </Link>{" "}
+          to sync your bank, quests, gear, and live progress; everything here carries over.
+        </div>
+      )}
       <div className="grid cols-4">
         <div className="stat">
           <span className="label">Total level</span>

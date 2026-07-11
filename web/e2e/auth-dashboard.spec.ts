@@ -67,4 +67,20 @@ test.describe("authenticated dashboard", () => {
     await expect(page).toHaveURL(/\/dashboard/);
     await expect(page.getByText("No accounts linked yet")).toBeVisible();
   });
+
+  test("linking by username imports a hiscores snapshot", async ({ page }) => {
+    await signIn(page, `rsn-link-${Date.now()}@example.com`);
+    // The guest "sign up" CTA lands here with the username prefilled
+    // (fixture lookup: deterministic, no network).
+    const username = `rsn ${Date.now() % 100_000_000}`;
+    await page.goto(`/link?username=${encodeURIComponent(username)}`);
+    await expect(page.getByPlaceholder("Your OSRS username")).toHaveValue(username);
+
+    await page.getByRole("button", { name: "Link by username" }).click();
+    await expect(page).toHaveURL(/\/p\//, { timeout: 15_000 });
+
+    // Snapshot materialized: hiscores-only banner plus real stats.
+    await expect(page.getByText("Linked by username", { exact: false })).toBeVisible();
+    await expect(page.getByText("Total level")).toBeVisible();
+  });
 });

@@ -8,6 +8,10 @@ export async function generateMetadata({ params }: { params: Promise<{ username:
 
 export default async function TryPage({ params }: { params: Promise<{ username: string }> }) {
   const { username } = await params;
+  // After sign-up, land on /link with this username prefilled.
+  const signupHref = `/signin?next=${encodeURIComponent(
+    `/link?username=${encodeURIComponent(decodeURIComponent(username))}`,
+  )}`;
 
   return (
     <>
@@ -18,7 +22,7 @@ export default async function TryPage({ params }: { params: Promise<{ username: 
           </Link>
           <span className="pill gold">Guest preview</span>
           <div className="spacer" />
-          <Link href="/signin" className="btn primary">
+          <Link href={signupHref} className="btn primary">
             Sign up free
           </Link>
         </div>
