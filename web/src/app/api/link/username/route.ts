@@ -8,7 +8,7 @@ import { PlayerNotFoundError } from "@/lib/lookup";
 import { AccountConflictError, linkByUsername } from "@/lib/rsnLink";
 import { rateLimit } from "@/lib/ratelimit";
 
-export const maxDuration = 30;
+export const maxDuration = 60; // hiscores lookup + up to 5 pages of WOM history
 
 export async function POST(req: NextRequest) {
   const user = await currentUser();

@@ -12,7 +12,13 @@
 
 import { Prisma } from "@prisma/client";
 import { db } from "./db";
-import { lookupPlayer, normalizeUsername, PlayerNotFoundError, type GuestSnapshot } from "./lookup";
+import {
+  fetchWomHistory,
+  lookupPlayer,
+  normalizeUsername,
+  PlayerNotFoundError,
+  type GuestSnapshot,
+} from "./lookup";
 import { ingestEvents, type IngestEvent } from "./materialize";
 
 export const RSN_HASH_PREFIX = "rsn:";
@@ -113,6 +119,29 @@ export async function linkByUsername(
   }
 
   await ingestEvents(profile.id, snapshotEvents(profile.id, snapshot));
+
+  // Best-effort: backfill stats-over-time from WOM's snapshot history so
+  // trend charts and XP-gain queries work from day one. skipDuplicates
+  // keeps any existing samples (today's ingest, or a plugin's) as-is.
+  try {
+    const history = await fetchWomHistory(snapshot.username);
+    const xpRows: Prisma.XpSampleCreateManyInput[] = [];
+    const kcRows: Prisma.KcSampleCreateManyInput[] = [];
+    for (const day of history) {
+      for (const [skill, xp] of Object.entries(day.skills)) {
+        xpRows.push({ profileId: profile.id, skill, date: day.date, xp: BigInt(xp) });
+      }
+      for (const [boss, kc] of Object.entries(day.bosses)) {
+        kcRows.push({ profileId: profile.id, boss, date: day.date, kc });
+      }
+    }
+    if (xpRows.length > 0) await db.xpSample.createMany({ data: xpRows, skipDuplicates: true });
+    if (kcRows.length > 0) await db.kcSample.createMany({ data: kcRows, skipDuplicates: true });
+  } catch (e) {
+    // WOM may have never tracked this player, or be down — the link is
+    // still fully usable with just today's snapshot.
+    console.warn(`WOM history backfill skipped for ${snapshot.username}:`, e);
+  }
 
   return { profileId: profile.id, displayName: snapshot.displayName, created: !existing };
 }

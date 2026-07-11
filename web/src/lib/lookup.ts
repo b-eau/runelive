@@ -128,6 +128,90 @@ async function fetchWiseOldMan(username: string): Promise<GuestSnapshot> {
   };
 }
 
+// ------------------------------------------------- WOM historical snapshots
+
+/** One day of historical stats, downsampled from WOM snapshots. */
+export type WomHistoryDay = {
+  date: Date; // UTC midnight
+  skills: Record<string, number>; // xp by skill, includes "overall"
+  bosses: Record<string, number>; // kc by boss (spaces, kills > 0)
+};
+
+type WomSnapshot = {
+  createdAt: string;
+  data: {
+    skills: Record<string, { experience: number }>;
+    bosses: Record<string, { kills: number }>;
+  };
+};
+
+const WOM_HISTORY_PAGE = 200; // API maximum
+const WOM_HISTORY_MAX_PAGES = 5;
+const WOM_HISTORY_PERIOD = "2y";
+
+/**
+ * Fetches up to ~2 years of WOM snapshots and keeps the latest snapshot of
+ * each UTC day. Throws PlayerNotFoundError when WOM has never tracked the
+ * player — callers treat history as best-effort.
+ */
+export async function fetchWomHistory(rawUsername: string): Promise<WomHistoryDay[]> {
+  const username = normalizeUsername(rawUsername);
+  if (!username) throw new PlayerNotFoundError(rawUsername);
+  if (process.env.GUEST_FIXTURES === "1") return fixtureHistory(username);
+
+  const snapshots: WomSnapshot[] = [];
+  for (let page = 0; page < WOM_HISTORY_MAX_PAGES; page++) {
+    const url =
+      `https://api.wiseoldman.net/v2/players/${encodeURIComponent(username.toLowerCase())}` +
+      `/snapshots?period=${WOM_HISTORY_PERIOD}&limit=${WOM_HISTORY_PAGE}&offset=${page * WOM_HISTORY_PAGE}`;
+    const batch = (await fetchJson(url)) as WomSnapshot[];
+    snapshots.push(...batch);
+    if (batch.length < WOM_HISTORY_PAGE) break;
+  }
+
+  // Newest-first from the API: the first snapshot seen per day is that
+  // day's latest, i.e. its end-of-day state.
+  const byDay = new Map<string, WomHistoryDay>();
+  for (const snap of snapshots) {
+    const day = snap.createdAt.slice(0, 10);
+    if (byDay.has(day)) continue;
+    const skills: Record<string, number> = {};
+    for (const [skill, v] of Object.entries(snap.data.skills)) {
+      if (v.experience >= 0) skills[skill] = v.experience; // -1 = unranked
+    }
+    const bosses: Record<string, number> = {};
+    for (const [boss, v] of Object.entries(snap.data.bosses)) {
+      if (v.kills > 0) bosses[boss.replace(/_/g, " ")] = v.kills;
+    }
+    byDay.set(day, { date: new Date(`${day}T00:00:00Z`), skills, bosses });
+  }
+  return [...byDay.values()];
+}
+
+/** Deterministic 10-day history for the test/e2e fixture player. */
+function fixtureHistory(username: string): WomHistoryDay[] {
+  const snapshot = fixtureSnapshot(username);
+  const days: WomHistoryDay[] = [];
+  for (let back = 9; back >= 0; back--) {
+    const date = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
+    date.setUTCDate(date.getUTCDate() - back);
+    const skills: Record<string, number> = {};
+    let total = 0;
+    for (const s of snapshot.skills) {
+      const xp = Math.max(0, s.xp - back * 5_000);
+      skills[s.skill] = xp;
+      total += xp;
+    }
+    skills.overall = total;
+    days.push({
+      date,
+      skills,
+      bosses: { kraken: Math.max(1, 179 - back * 2), vorkath: Math.max(1, 57 - back) },
+    });
+  }
+  return days;
+}
+
 // -------------------------------------------------------- official hiscores
 
 // Hiscores "activities" mixes minigames/clues with bosses; these prefixes are

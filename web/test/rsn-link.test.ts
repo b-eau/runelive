@@ -68,8 +68,11 @@ describe("linkByUsername", () => {
     expect(overall!.level).toBeGreaterThan(0);
     const skillCount = await db.skillState.count({ where: { profileId: result.profileId } });
     expect(skillCount).toBeGreaterThanOrEqual(24); // 23 skills + overall
-    const samples = await db.xpSample.count({ where: { profileId: result.profileId } });
-    expect(samples).toBe(skillCount);
+    const today = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
+    const todaySamples = await db.xpSample.count({
+      where: { profileId: result.profileId, date: today },
+    });
+    expect(todaySamples).toBe(skillCount);
 
     // Boss KCs from the fixture (kraken 179 is the top entry).
     const kraken = await db.killCountState.findUnique({
@@ -81,6 +84,40 @@ describe("linkByUsername", () => {
     const profile = await db.profile.findUnique({ where: { id: result.profileId } });
     expect(profile?.combatLevel).toBeGreaterThan(3);
     expect(profile?.lastSyncedAt).not.toBeNull();
+  });
+
+  it("backfills stats-over-time from WOM history", async () => {
+    const username = freshUsername();
+    const { profileId } = await linkByUsername(userId, username);
+
+    // Fixture history: 10 days per skill (today's row comes from the live
+    // snapshot ingest; skipDuplicates keeps it) + overall for the trend chart.
+    const slayerDays = await db.xpSample.findMany({
+      where: { profileId, skill: "slayer" },
+      orderBy: { date: "asc" },
+    });
+    expect(slayerDays.length).toBe(10);
+    // XP over time never decreases in the fixture ramp.
+    for (let i = 1; i < slayerDays.length; i++) {
+      expect(slayerDays[i].xp >= slayerDays[i - 1].xp).toBe(true);
+    }
+    const overallDays = await db.xpSample.count({ where: { profileId, skill: "overall" } });
+    expect(overallDays).toBe(10);
+
+    const krakenDays = await db.kcSample.findMany({
+      where: { profileId, boss: "kraken" },
+      orderBy: { date: "asc" },
+    });
+    expect(krakenDays.length).toBe(10);
+    expect(krakenDays[krakenDays.length - 1].kc).toBe(179);
+
+    // Today's samples reflect the live snapshot (ingested first), not the
+    // history row for the same day.
+    const today = new Date(new Date().toISOString().slice(0, 10) + "T00:00:00Z");
+    const todaySlayer = await db.xpSample.findUnique({
+      where: { profileId_skill_date: { profileId, skill: "slayer", date: today } },
+    });
+    expect(todaySlayer?.xp).toBe(13_036_888n);
   });
 
   it("re-linking the same username for the same user reuses the profile", async () => {
