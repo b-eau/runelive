@@ -9,3 +9,6 @@ nb-configuration.xml
 nbproject/
 .next/
 node_modules/
+.vercel
+.env*
+!.env.example
