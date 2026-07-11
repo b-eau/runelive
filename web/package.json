@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "postinstall": "prisma generate",
+    "vercel-build": "prisma generate && DATABASE_URL=${DIRECT_DATABASE_URL:-$DATABASE_URL} prisma migrate deploy && next build",
     "start": "next start",
     "lint": "next lint",
     "db:migrate": "prisma migrate dev",

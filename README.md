@@ -13,8 +13,8 @@ lightweight RuneLite sync plugin.
                                 │  • AI chat + voice   │
                                 └─────────┬────────────┘
                                           │ Prisma
-                                    SQLite (dev) /
-                                    Postgres (prod)
+                                       Postgres
+                                    (Neon in prod)
 ```
 
 ## Quick start (local)
@@ -22,8 +22,8 @@ lightweight RuneLite sync plugin.
 ```bash
 cd web
 npm install
-cp .env.example .env          # defaults work out of the box
-npx prisma migrate dev        # creates SQLite db + runs the seed
+cp .env.example .env          # point DATABASE_URL at a local Postgres
+npx prisma migrate dev        # applies migrations + runs the seed
 npm run dev                   # http://localhost:3000
 ```
 
@@ -67,7 +67,7 @@ sign in, and the plugin starts syncing. It sends:
 
 ```bash
 cd web
-npm test          # vitest unit suite (throwaway SQLite db)
+npm test          # vitest unit suite (throwaway Postgres db)
 npm run test:e2e  # Playwright end-to-end (builds + boots a seeded server)
 ```
 

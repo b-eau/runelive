@@ -10,16 +10,16 @@
 // rollups (XpSample, BankValueSample, KcSample) that power trend charts
 // and analytical queries without scanning the event log.
 //
-// Local dev uses SQLite. For production, switch provider to "postgresql"
-// (see DEPLOYMENT.md) — the schema is written to be portable: no enums
-// (string constants instead), JSON payloads stored as strings.
+// Uses Postgres everywhere (Neon in production — see DEPLOYMENT.md). The
+// schema is written to be portable: no enums (string constants instead),
+// JSON payloads stored as strings.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

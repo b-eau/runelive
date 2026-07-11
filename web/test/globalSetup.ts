@@ -1,27 +1,25 @@
 // Runs once before the whole test run (separate from test-file workers):
-// provisions a throwaway SQLite database at a fixed path and applies the
-// Prisma schema to it. Test files point DATABASE_URL at the same file (see
-// test/setup.ts) so no cross-process coordination is needed.
+// resets a throwaway Postgres database and applies the Prisma schema to it.
+// Test files point DATABASE_URL at the same database (see test/setup.ts) so
+// no cross-process coordination is needed.
+//
+// Point TEST_DATABASE_URL at any Postgres you have available — a local
+// install, Docker, or a Neon branch. CI provides a service container.
 
 import { execSync } from "child_process";
-import { existsSync, mkdirSync, rmSync } from "fs";
 import path from "path";
 
-export const TEST_DB_DIR = path.join(__dirname, ".tmp");
-export const TEST_DB_PATH = path.join(TEST_DB_DIR, "vitest.db");
-export const TEST_DATABASE_URL = `file:${TEST_DB_PATH}`;
+export const TEST_DATABASE_URL =
+  process.env.TEST_DATABASE_URL ??
+  "postgresql://postgres:postgres@127.0.0.1:5432/sidekick_test";
 
 export default function setup() {
-  rmSync(TEST_DB_DIR, { recursive: true, force: true });
-  mkdirSync(TEST_DB_DIR, { recursive: true });
-
-  execSync("npx prisma db push --skip-generate --accept-data-loss", {
-    cwd: path.join(__dirname, ".."),
-    env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
-    stdio: "inherit",
-  });
-
-  if (!existsSync(TEST_DB_PATH)) {
-    throw new Error("Test database was not created");
-  }
+  execSync(
+    "npx prisma db push --skip-generate --accept-data-loss --force-reset",
+    {
+      cwd: path.join(__dirname, ".."),
+      env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
+      stdio: "inherit",
+    },
+  );
 }

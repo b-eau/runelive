@@ -12,7 +12,7 @@ const executablePath =
 export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
-  // Small suite sharing one server + SQLite db + in-memory rate limits:
+  // Small suite sharing one server + database + in-memory rate limits:
   // run serially for determinism.
   fullyParallel: false,
   workers: 1,

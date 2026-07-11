@@ -8,7 +8,7 @@ export default defineConfig({
     globals: false,
     globalSetup: ["./test/globalSetup.ts"],
     setupFiles: ["./test/setup.ts"],
-    // Materializer tests share one SQLite file; keep them from racing.
+    // Materializer tests share one test database; keep them from racing.
     fileParallelism: false,
     include: ["test/**/*.test.ts"],
   },

@@ -8,41 +8,29 @@ Supabase).
 ## 1. Database — Neon (or Supabase/RDS)
 
 1. Create a Postgres database at [neon.tech](https://neon.tech) (free tier is
-   plenty for ~1k users) and copy the connection string.
-2. Switch Prisma to Postgres — edit `web/prisma/schema.prisma`:
-
-   ```prisma
-   datasource db {
-     provider = "postgresql"
-     url      = env("DATABASE_URL")
-   }
-   ```
-
-3. Regenerate the migrations for Postgres (one-time, from `web/`):
-
-   ```bash
-   rm -rf prisma/migrations
-   DATABASE_URL="postgres://…" npx prisma migrate dev --name init
-   ```
-
-   The schema is written to be portable (no enums, no JSON columns), so no
-   model changes are needed.
-
-4. Seed the demo data (optional in prod): `DATABASE_URL="…" npm run db:seed`
+   plenty for ~1k users) and copy the connection string. The Prisma schema
+   and the committed migrations already target Postgres — no schema changes
+   needed.
+2. Seed the demo data (optional in prod): `DATABASE_URL="…" npm run db:seed`
 
 > **Pooling:** on serverless (Vercel), use Neon's pooled connection string
 > (`-pooler` host) for `DATABASE_URL`.
 
 ## 2. Web app — Vercel
 
-1. Import the repo in Vercel, set **Root Directory = `web/`**.
-2. Build command: `prisma generate && next build` (Vercel's default Next.js
-   preset + a `postinstall: prisma generate` script also works).
+1. Import the repo in Vercel, set **Root Directory = `web/`** and framework
+   preset **Next.js**.
+2. Build command: leave the default. `web/package.json` has a `vercel-build`
+   script (`prisma generate && prisma migrate deploy && next build`) that
+   Vercel picks up automatically — it generates the Prisma client and applies
+   pending migrations on every deploy. If you previously set a custom build
+   command in the dashboard, clear it (or set it to `npm run vercel-build`).
 3. Environment variables:
 
    | Variable | Value |
    |---|---|
-   | `DATABASE_URL` | Neon pooled connection string |
+   | `DATABASE_URL` | Neon pooled connection string (`-pooler` host) — used by the app at runtime |
+   | `DIRECT_DATABASE_URL` | Neon direct connection string (same URL without `-pooler`) — used by `prisma migrate deploy` at build time, which does not work through the pooler |
    | `APP_URL` | `https://your-domain.com` |
    | `AUTH_SECRET` | `openssl rand -hex 32` |
    | `RESEND_API_KEY` | from [resend.com](https://resend.com) (magic-link email) |
@@ -50,8 +38,10 @@ Supabase).
    | `ANTHROPIC_API_KEY` | from [console.anthropic.com](https://console.anthropic.com) — powers chat + voice |
    | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | optional, see below |
 
-4. Run migrations on deploy: add `prisma migrate deploy` to the build command,
-   or run it once manually: `DATABASE_URL="…" npx prisma migrate deploy`.
+4. **Deployment Protection:** Vercel protects deployment URLs behind Vercel
+   SSO by default (visitors get redirected to a Vercel login). To make the
+   site public, go to Project → Settings → Deployment Protection and disable
+   Vercel Authentication (or scope it to previews only).
 
 ### Google sign-in (optional)
 

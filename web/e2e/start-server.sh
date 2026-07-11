@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Boots the app for Playwright: throwaway SQLite db, seeded, guest lookups in
-# fixture mode (no external network), magic links echoed in the API response.
+# Boots the app for Playwright: throwaway Postgres db, seeded, guest lookups
+# in fixture mode (no external network), magic links echoed in the API
+# response. Point E2E_DATABASE_URL at any Postgres you have available — a
+# local install, Docker, or a Neon branch. CI provides a service container.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-mkdir -p e2e/.tmp
-export DATABASE_URL="file:$(pwd)/e2e/.tmp/e2e.db"
+export DATABASE_URL="${E2E_DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:5432/sidekick_e2e}"
 export GUEST_FIXTURES=1
 export E2E_AUTH_LINK=1
 export AUTH_SECRET="e2e-secret-not-for-production"
@@ -13,8 +14,7 @@ export APP_URL="http://localhost:3100"
 # Determinism: chat must run in demo mode even if the shell has a key.
 unset ANTHROPIC_API_KEY || true
 
-rm -f e2e/.tmp/e2e.db
-npx prisma db push --skip-generate --accept-data-loss > /dev/null
+npx prisma db push --skip-generate --accept-data-loss --force-reset > /dev/null
 npx tsx prisma/seed.ts > /dev/null
 
 # CI builds beforehand; locally, build on demand.
