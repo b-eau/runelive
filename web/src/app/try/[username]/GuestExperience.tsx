@@ -6,6 +6,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import AssistantMessage from "@/components/AssistantMessage";
 import { SKILL_EMOJI } from "@/components/skillEmoji";
 
 type GuestSkill = { skill: string; xp: number; level: number; rank?: number };
@@ -353,11 +354,15 @@ function GuestChat({ snapshot, suggestions }: { snapshot: Snapshot; suggestions:
             </div>
           </div>
         )}
-        {messages.map((m, i) => (
-          <div key={i} className={`msg ${m.role}`}>
-            {m.content}
-          </div>
-        ))}
+        {messages.map((m, i) =>
+          m.role === "assistant" ? (
+            <AssistantMessage key={i} content={m.content} />
+          ) : (
+            <div key={i} className={`msg ${m.role}`}>
+              {m.content}
+            </div>
+          ),
+        )}
         {busy && <div className="msg assistant">Thinking…</div>}
         {limitReached && (
           <div style={{ textAlign: "center", padding: "8px 0" }}>

@@ -6,10 +6,12 @@ import { runSidekick } from "@/lib/sidekick";
 export const maxDuration = 120; // LLM turns with tool use can take a while
 
 const HISTORY_LIMIT = 24;
+const TITLE_LIMIT = 60;
 
 export async function POST(req: NextRequest) {
-  const { profileId, message } = (await req.json().catch(() => ({}))) as {
+  const { profileId, conversationId, message } = (await req.json().catch(() => ({}))) as {
     profileId?: string;
+    conversationId?: string;
     message?: string;
   };
   if (!profileId || !message?.trim()) {
@@ -19,10 +21,24 @@ export async function POST(req: NextRequest) {
   if (!profile) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const trimmed = message.trim().slice(0, 4000);
-  await db.chatMessage.create({ data: { profileId, role: "user", content: trimmed } });
+
+  // Resolve the thread: verify ownership when given, create on first message.
+  let conversation = conversationId
+    ? await db.conversation.findUnique({ where: { id: conversationId } })
+    : null;
+  if (conversationId && (!conversation || conversation.profileId !== profileId)) {
+    return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+  }
+  conversation ??= await db.conversation.create({
+    data: { profileId, title: trimmed.slice(0, TITLE_LIMIT) },
+  });
+
+  await db.chatMessage.create({
+    data: { profileId, conversationId: conversation.id, role: "user", content: trimmed },
+  });
 
   const recent = await db.chatMessage.findMany({
-    where: { profileId },
+    where: { conversationId: conversation.id },
     orderBy: { createdAt: "desc" },
     take: HISTORY_LIMIT,
   });
@@ -42,8 +58,11 @@ export async function POST(req: NextRequest) {
   try {
     const reply = await runSidekick(profileId, history);
     console.log(`sidekick turn completed in ${Date.now() - startedAt}ms`);
-    await db.chatMessage.create({ data: { profileId, role: "assistant", content: reply } });
-    return NextResponse.json({ reply });
+    await db.chatMessage.create({
+      data: { profileId, conversationId: conversation.id, role: "assistant", content: reply },
+    });
+    await db.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
+    return NextResponse.json({ reply, conversationId: conversation.id, title: conversation.title });
   } catch (e) {
     console.error(`sidekick error after ${Date.now() - startedAt}ms`, e);
     return NextResponse.json(
@@ -55,11 +74,19 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   const profileId = req.nextUrl.searchParams.get("profileId");
-  if (!profileId) return NextResponse.json({ error: "profileId required" }, { status: 400 });
+  const conversationId = req.nextUrl.searchParams.get("conversationId");
+  if (!profileId || !conversationId) {
+    return NextResponse.json({ error: "profileId and conversationId required" }, { status: 400 });
+  }
   const profile = await authorizedProfile(profileId);
   if (!profile) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const conversation = await db.conversation.findUnique({ where: { id: conversationId } });
+  if (!conversation || conversation.profileId !== profileId) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const messages = await db.chatMessage.findMany({
-    where: { profileId },
+    where: { conversationId },
     orderBy: { createdAt: "asc" },
     take: 200,
   });

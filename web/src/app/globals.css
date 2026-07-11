@@ -552,6 +552,146 @@ select:focus-visible {
   padding: 6px 12px;
 }
 
+/* Markdown-rendered assistant bubbles */
+.msg.markdown {
+  white-space: normal;
+  position: relative;
+}
+.msg.markdown p { margin: 0 0 8px; }
+.msg.markdown p:last-of-type { margin-bottom: 0; }
+.msg.markdown ul, .msg.markdown ol { margin: 4px 0 8px; padding-left: 20px; }
+.msg.markdown li { margin: 2px 0; }
+.msg.markdown h1, .msg.markdown h2, .msg.markdown h3, .msg.markdown h4 {
+  font-size: 14px;
+  margin: 10px 0 4px;
+}
+.msg.markdown code {
+  background: color-mix(in oklab, var(--ink-3) 14%, transparent);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12.5px;
+}
+.msg.markdown pre {
+  background: color-mix(in oklab, var(--ink-3) 10%, transparent);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 6px 0 8px;
+}
+.msg.markdown pre code { background: none; padding: 0; }
+.msg.markdown table { border-collapse: collapse; margin: 6px 0 8px; font-size: 13px; }
+.msg.markdown th, .msg.markdown td { border: 1px solid var(--border); padding: 4px 8px; }
+.msg.markdown a { color: var(--gold); }
+
+.copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface-1);
+  color: var(--ink-3);
+  border-radius: 6px;
+  font-size: 10.5px;
+  padding: 2px 7px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.msg.markdown:hover .copy-btn,
+.copy-btn:focus-visible,
+.copy-btn.copied {
+  opacity: 1;
+}
+.copy-btn.copied { color: var(--gold); border-color: var(--gold); }
+
+/* Conversation rail */
+.chat-shell {
+  display: flex;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.chat-rail {
+  width: 224px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 12px 10px;
+  gap: 8px;
+  overflow-y: auto;
+}
+.chat-rail .conv {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  padding: 7px 9px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-rail .conv:hover { background: var(--surface-2); }
+.chat-rail .conv.active {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--ink-1);
+}
+.chat-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  position: relative;
+}
+.rail-toggle { display: none; }
+@media (max-width: 760px) {
+  .chat-rail { display: none; }
+  .chat-rail.open {
+    display: flex;
+    position: absolute;
+    inset: 0 25% 0 0;
+    z-index: 5;
+    background: var(--surface-1);
+  }
+  .chat-shell { position: relative; }
+  .rail-toggle { display: inline-block; }
+}
+
+/* Suggestions popover (the ✨ button next to the composer) */
+.suggest-pop {
+  position: absolute;
+  bottom: 54px;
+  left: 8px;
+  right: 8px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.suggest-pop button {
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.suggest-pop button:hover { background: var(--surface-2); color: var(--ink-1); }
+
 /* ------------------------------------------------------------------ misc */
 
 .quest-row {

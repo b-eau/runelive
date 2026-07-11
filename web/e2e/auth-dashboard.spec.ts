@@ -62,6 +62,36 @@ test.describe("authenticated dashboard", () => {
     await expect(page.getByText(/ask me anything/i)).toBeVisible();
   });
 
+  test("chat: parallel conversations, history, markdown replies", async ({ page }) => {
+    await signIn(page, "beaumitch@gmail.com");
+    await openMainProfile(page);
+    await page.getByRole("link", { name: "Sidekick ✨" }).click();
+
+    // First conversation (demo mode replies instantly) appears in the rail,
+    // titled after the opening message.
+    await page.getByPlaceholder("Ask your Sidekick anything…").fill("first topic question");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(page.locator(".msg.assistant").last()).toContainText("Demo mode", { timeout: 15_000 });
+    await expect(page.locator(".chat-rail .conv", { hasText: "first topic question" })).toBeVisible();
+
+    // Assistant replies are markdown bubbles with a raw-markdown copy button.
+    await expect(page.locator(".msg.assistant.markdown .copy-btn").first()).toBeAttached();
+
+    // A parallel thread via "New chat".
+    await page.getByRole("button", { name: "+ New chat" }).click();
+    await page.getByPlaceholder("Ask your Sidekick anything…").fill("second topic question");
+    await page.getByRole("button", { name: "Send" }).click();
+    await expect(page.locator(".chat-rail .conv")).toHaveCount(2);
+
+    // Revisiting the first conversation restores its history.
+    await page.locator(".chat-rail .conv", { hasText: "first topic question" }).click();
+    await expect(page.locator(".msg.user").first()).toContainText("first topic question");
+
+    // Fresh conversation starters stay reachable mid-conversation.
+    await page.getByRole("button", { name: "Show suggested conversation starters" }).click();
+    await expect(page.getByText("Start a fresh conversation:")).toBeVisible();
+  });
+
   test("a brand-new user sees the empty state", async ({ page }) => {
     await signIn(page, `fresh-${Date.now()}@example.com`);
     await expect(page).toHaveURL(/\/dashboard/);

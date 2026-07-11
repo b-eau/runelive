@@ -93,8 +93,9 @@ model Profile {
   bankSamples  BankValueSample[]
   killCounts   KillCountState[]
   kcSamples    KcSample[]
-  goals        Goal[]
-  chatMessages ChatMessage[]
+  goals         Goal[]
+  conversations Conversation[]
+  chatMessages  ChatMessage[]
 
   @@unique([accountId, kind])
 }
@@ -261,16 +262,34 @@ model Goal {
   @@index([profileId, status])
 }
 
-model ChatMessage {
+// A chat thread. Users can run several in parallel and revisit old ones;
+// title is derived from the first user message.
+model Conversation {
   id        String   @id @default(cuid())
   profileId String
-  role      String // user | assistant
-  content   String
+  title     String
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profile  Profile       @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@index([profileId, updatedAt])
+}
+
+model ChatMessage {
+  id             String   @id @default(cuid())
+  profileId      String
+  conversationId String
+  role           String // user | assistant
+  content        String
+  createdAt      DateTime @default(now())
+
+  profile      Profile      @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   @@index([profileId, createdAt])
+  @@index([conversationId, createdAt])
 }
 
 // Cached Grand Exchange guide prices (OSRS wiki), used to value banks.

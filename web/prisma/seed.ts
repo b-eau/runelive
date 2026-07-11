@@ -201,6 +201,7 @@ async function main() {
 
   // Wipe in dependency order so the seed is rerunnable.
   await db.chatMessage.deleteMany();
+  await db.conversation.deleteMany();
   await db.goal.deleteMany();
   await db.kcSample.deleteMany();
   await db.killCountState.deleteMany();
