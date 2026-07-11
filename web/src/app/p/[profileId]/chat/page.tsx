@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { authorizedProfile } from "@/lib/data";
-import { anthropicEnabled } from "@/lib/sidekick";
+import { llmEnabled } from "@/lib/sidekick";
 import ChatPanel from "./ChatPanel";
 
 export const metadata = { title: "Sidekick" };
@@ -14,7 +14,7 @@ export default async function ChatPage({ params }: { params: Promise<{ profileId
     <ChatPanel
       profileId={profileId}
       displayName={profile.account.displayName}
-      demoMode={!anthropicEnabled()}
+      demoMode={!llmEnabled()}
     />
   );
 }

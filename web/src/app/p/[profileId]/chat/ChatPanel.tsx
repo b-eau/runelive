@@ -172,7 +172,7 @@ export default function ChatPanel({
             marginBottom: 12,
           }}
         >
-          Demo mode: set <code>ANTHROPIC_API_KEY</code> in <code>web/.env</code> to unlock the full assistant.
+          Demo mode: set <code>ANTHROPIC_API_KEY</code> or <code>GEMINI_API_KEY</code> in <code>web/.env</code> to unlock the full assistant.
         </div>
       )}
       <div className="chat-log" ref={logRef}>

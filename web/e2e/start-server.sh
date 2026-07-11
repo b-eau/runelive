@@ -12,7 +12,7 @@ export E2E_AUTH_LINK=1
 export AUTH_SECRET="e2e-secret-not-for-production"
 export APP_URL="http://localhost:3100"
 # Determinism: chat must run in demo mode even if the shell has a key.
-unset ANTHROPIC_API_KEY || true
+unset ANTHROPIC_API_KEY GEMINI_API_KEY || true
 
 npx prisma db push --skip-generate --accept-data-loss --force-reset > /dev/null
 npx tsx prisma/seed.ts > /dev/null

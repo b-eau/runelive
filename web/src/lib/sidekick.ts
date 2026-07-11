@@ -5,12 +5,18 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaTool } from "@anthropic-ai/sdk/helpers/beta/json-schema";
 import { db } from "./db";
+import { geminiEnabled, runGeminiChat } from "./gemini";
 import { formatGp, formatXp, titleCase } from "./osrs";
 
 export const SIDEKICK_MODEL = "claude-opus-4-8";
 
 export function anthropicEnabled(): boolean {
   return !!process.env.ANTHROPIC_API_KEY;
+}
+
+/** Anthropic takes precedence when both keys are configured. */
+export function llmEnabled(): boolean {
+  return anthropicEnabled() || geminiEnabled();
 }
 
 /** Compact account summary injected up-front so common questions need no tool call. */
@@ -198,8 +204,18 @@ export async function runSidekick(
 ): Promise<string> {
   const context = await buildContext(profileId);
 
-  if (!anthropicEnabled()) {
+  if (!llmEnabled()) {
     return demoReply(context);
+  }
+
+  if (!anthropicEnabled()) {
+    const text = await runGeminiChat({
+      system: systemPrompt(context),
+      history,
+      tools: buildTools(profileId),
+      maxIterations: 8,
+    });
+    return text || "Hmm, I came up empty — try rephrasing that.";
   }
 
   const client = new Anthropic();
@@ -224,7 +240,7 @@ export async function runSidekick(
 /** Keeps local demos functional without an API key. */
 function demoReply(context: string): string {
   return [
-    "⚠️ Demo mode — set ANTHROPIC_API_KEY in web/.env to enable the real Sidekick assistant.",
+    "⚠️ Demo mode — set ANTHROPIC_API_KEY or GEMINI_API_KEY in web/.env to enable the real Sidekick assistant.",
     "",
     "Here's the account context I would reason over:",
     context,

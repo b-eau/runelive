@@ -5,7 +5,8 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { GuestSnapshot } from "./lookup";
-import { anthropicEnabled } from "./sidekick";
+import { runGeminiChat, runGeminiJson } from "./gemini";
+import { anthropicEnabled, llmEnabled } from "./sidekick";
 import { formatXp, titleCase, xpForLevel } from "./osrs";
 
 // Deliberately the cheap tier: guest traffic is unauthenticated and the
@@ -95,8 +96,38 @@ export function heuristicSuggestions(snapshot: GuestSnapshot): string[] {
  * Personalized starter queries via the cheap model; falls back to
  * heuristics without an API key or on any model/parsing failure.
  */
+const SUGGESTION_SYSTEM =
+  "You generate short starter questions an Old School RuneScape player might ask an AI assistant about their own account. Each must be specific to the player's actual stats (reference real skills/levels/bosses from the context), under 90 characters, phrased in first person, and interesting enough to make them want the answer. Vary the topics: training, bossing, milestones, efficiency.";
+
+function sanitizeSuggestions(raw: string[] | undefined): string[] {
+  return (raw ?? [])
+    .filter((s) => typeof s === "string" && s.trim().length > 0)
+    .map((s) => s.trim().slice(0, 140))
+    .slice(0, 4);
+}
+
 export async function suggestQueries(snapshot: GuestSnapshot): Promise<string[]> {
-  if (!anthropicEnabled()) return heuristicSuggestions(snapshot);
+  if (!llmEnabled()) return heuristicSuggestions(snapshot);
+
+  if (!anthropicEnabled()) {
+    try {
+      const parsed = await runGeminiJson<{ suggestions?: string[] }>({
+        system: SUGGESTION_SYSTEM,
+        prompt: `Player context:\n${buildGuestContext(snapshot)}\n\nGenerate exactly 4 starter questions.`,
+        schema: {
+          type: "object",
+          properties: { suggestions: { type: "array", items: { type: "string" } } },
+          required: ["suggestions"],
+        },
+      });
+      const suggestions = sanitizeSuggestions(parsed.suggestions);
+      return suggestions.length >= 2 ? suggestions : heuristicSuggestions(snapshot);
+    } catch (e) {
+      console.warn("guest suggestion generation failed, using heuristics", e);
+      return heuristicSuggestions(snapshot);
+    }
+  }
+
   try {
     const client = new Anthropic();
     const response = await client.messages.create({
@@ -119,8 +150,7 @@ export async function suggestQueries(snapshot: GuestSnapshot): Promise<string[]>
           },
         },
       },
-      system:
-        "You generate short starter questions an Old School RuneScape player might ask an AI assistant about their own account. Each must be specific to the player's actual stats (reference real skills/levels/bosses from the context), under 90 characters, phrased in first person, and interesting enough to make them want the answer. Vary the topics: training, bossing, milestones, efficiency.",
+      system: SUGGESTION_SYSTEM,
       messages: [
         {
           role: "user",
@@ -131,10 +161,7 @@ export async function suggestQueries(snapshot: GuestSnapshot): Promise<string[]>
     const text = response.content.find((b) => b.type === "text");
     if (!text || text.type !== "text") return heuristicSuggestions(snapshot);
     const parsed = JSON.parse(text.text) as { suggestions?: string[] };
-    const suggestions = (parsed.suggestions ?? [])
-      .filter((s) => typeof s === "string" && s.trim().length > 0)
-      .map((s) => s.trim().slice(0, 140))
-      .slice(0, 4);
+    const suggestions = sanitizeSuggestions(parsed.suggestions);
     return suggestions.length >= 2 ? suggestions : heuristicSuggestions(snapshot);
   } catch (e) {
     console.warn("guest suggestion generation failed, using heuristics", e);
@@ -172,15 +199,24 @@ export async function runGuestChat(snapshot: GuestSnapshot, history: GuestMessag
   }
   if (messages.length === 0) throw new Error("empty history");
 
-  if (!anthropicEnabled()) {
+  if (!llmEnabled()) {
     return [
-      "⚠️ Demo mode — the server has no ANTHROPIC_API_KEY, so I can't reason about your question yet.",
+      "⚠️ Demo mode — the server has no LLM API key (ANTHROPIC_API_KEY or GEMINI_API_KEY), so I can't reason about your question yet.",
       "",
       "Here's the snapshot I can see for you:",
       buildGuestContext(snapshot),
       "",
       "Sign up and link the RuneLite plugin to unlock the full Sidekick.",
     ].join("\n");
+  }
+
+  if (!anthropicEnabled()) {
+    // No explicit maxTokens: the 4096 default leaves room for thinking.
+    const text = await runGeminiChat({
+      system: guestSystemPrompt(snapshot),
+      history: messages,
+    });
+    return text || "Hmm, I came up empty — try rephrasing that.";
   }
 
   const client = new Anthropic();
