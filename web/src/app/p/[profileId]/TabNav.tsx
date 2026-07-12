@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 
 const TABS = [
@@ -13,6 +13,20 @@ const TABS = [
   { slug: "chat", label: "Sidekick ✨" },
 ];
 
+// Shows a spinner on the clicked tab while its page renders, so switching
+// tabs feels acknowledged even when the server render is slow (cold start).
+// useLinkStatus reads the nearest parent <Link>, so this only reflects tab
+// navigations — never the in-page skill/boss/range refinements.
+function TabLabel({ label }: { label: string }) {
+  const { pending } = useLinkStatus();
+  return (
+    <>
+      {label}
+      {pending && <span className="tab-spinner" aria-label="Loading" />}
+    </>
+  );
+}
+
 export default function TabNav({ profileId }: { profileId: string }) {
   const pathname = usePathname();
   const base = `/p/${profileId}`;
@@ -23,7 +37,7 @@ export default function TabNav({ profileId }: { profileId: string }) {
         const active = t.slug ? pathname.startsWith(href) : pathname === base;
         return (
           <Link key={t.slug} href={href} className={active ? "active" : ""}>
-            {t.label}
+            <TabLabel label={t.label} />
           </Link>
         );
       })}

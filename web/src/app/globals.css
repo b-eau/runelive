@@ -703,6 +703,32 @@ select:focus-visible {
 }
 .suggest-pop button:hover { background: var(--surface-2); color: var(--ink-1); }
 
+/* --------------------------------------------------- tab loading spinner */
+
+.tab-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 6px;
+  vertical-align: -1px;
+  border: 2px solid color-mix(in oklab, var(--ink-3) 45%, transparent);
+  border-top-color: var(--gold);
+  border-radius: 50%;
+  animation: tab-spin 0.6s linear infinite;
+}
+
+@keyframes tab-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-spinner {
+    animation-duration: 1.6s;
+  }
+}
+
 /* --------------------------------------------------------------- meters */
 
 .meter {

@@ -11,7 +11,8 @@ import { isMiniquest } from "./quests";
 import Anthropic from "@anthropic-ai/sdk";
 
 const SUGGESTION_TTL_MS = 6 * 60 * 60 * 1000;
-const cache = new Map<string, { suggestions: string[]; expiresAt: number }>();
+// Don't let concurrent tab loads all fire the LLM before the first finishes.
+const REFRESH_MIN_INTERVAL_MS = 60 * 1000;
 
 const SUGGESTION_SYSTEM = `You generate short starter questions an Old School RuneScape player might ask their AI account assistant. The assistant can see the player's synced skills, bank, quest log, diaries, boss kill counts, XP history, and stated goals.
 
@@ -166,18 +167,62 @@ export async function suggestFollowups(
   return llmSuggestions(FOLLOWUP_SYSTEM, prompt, 3);
 }
 
+async function readCache(
+  profileId: string,
+  context: SuggestContext,
+): Promise<{ suggestions: string[]; ageMs: number } | null> {
+  const row = await db.suggestionCache.findUnique({
+    where: { profileId_context: { profileId, context } },
+  });
+  if (!row) return null;
+  try {
+    const suggestions = JSON.parse(row.payload) as string[];
+    if (!Array.isArray(suggestions) || suggestions.length === 0) return null;
+    return { suggestions, ageMs: Date.now() - row.updatedAt.getTime() };
+  } catch {
+    return null;
+  }
+}
+
+async function writeCache(profileId: string, context: SuggestContext, suggestions: string[]): Promise<void> {
+  const payload = JSON.stringify(suggestions);
+  await db.suggestionCache.upsert({
+    where: { profileId_context: { profileId, context } },
+    create: { profileId, context, payload, updatedAt: new Date() },
+    update: { payload, updatedAt: new Date() },
+  });
+}
+
 /**
- * Personalized prompts for a given surface. Cached per (profile, context)
- * for 6h. Grounded heuristics are the floor; the LLM upgrades them when a
- * key is configured.
+ * Instant read for the request path: never calls the LLM. Returns the best
+ * suggestions available right now (fresh DB cache, else a stale cache, else
+ * grounded heuristics) plus whether a background refresh should run.
  */
-export async function suggestProfileQueries(
+export async function peekSuggestions(
+  profileId: string,
+  context: SuggestContext = "chat",
+): Promise<{ suggestions: string[]; needsRefresh: boolean }> {
+  const cached = await readCache(profileId, context);
+  if (cached && cached.ageMs < SUGGESTION_TTL_MS) {
+    return { suggestions: cached.suggestions, needsRefresh: false };
+  }
+  // A stale LLM set still reads better than heuristics; only fall back to
+  // heuristics when there is nothing cached at all.
+  const suggestions = cached?.suggestions ?? (await heuristicProfileSuggestions(profileId, context));
+  return { suggestions, needsRefresh: true };
+}
+
+/**
+ * Slow path: heuristics upgraded by the LLM, persisted to the shared cache.
+ * Safe to run in the background via after() or synchronously. Deduped so a
+ * burst of tab loads doesn't stampede the model.
+ */
+export async function refreshSuggestions(
   profileId: string,
   context: SuggestContext = "chat",
 ): Promise<string[]> {
-  const cacheKey = `${profileId}:${context}`;
-  const hit = cache.get(cacheKey);
-  if (hit && hit.expiresAt > Date.now()) return hit.suggestions;
+  const cached = await readCache(profileId, context);
+  if (cached && cached.ageMs < REFRESH_MIN_INTERVAL_MS) return cached.suggestions;
 
   let suggestions = await heuristicProfileSuggestions(profileId, context);
   const focus = CONTEXT_FOCUS[context];
@@ -185,10 +230,18 @@ export async function suggestProfileQueries(
   const fresh = await llmSuggestions(focus ? `${SUGGESTION_SYSTEM}\n\n${focus}` : SUGGESTION_SYSTEM, prompt, 4);
   if (fresh.length >= 2) suggestions = fresh;
 
-  cache.set(cacheKey, { suggestions, expiresAt: Date.now() + SUGGESTION_TTL_MS });
-  if (cache.size > 5000) {
-    const oldest = cache.keys().next().value;
-    if (oldest) cache.delete(oldest);
-  }
+  await writeCache(profileId, context, suggestions);
   return suggestions;
+}
+
+/**
+ * Full synchronous result (LLM included). Used by non-request callers and
+ * tests; the request path uses peekSuggestions + a background refresh.
+ */
+export async function suggestProfileQueries(
+  profileId: string,
+  context: SuggestContext = "chat",
+): Promise<string[]> {
+  const { suggestions, needsRefresh } = await peekSuggestions(profileId, context);
+  return needsRefresh ? refreshSuggestions(profileId, context) : suggestions;
 }

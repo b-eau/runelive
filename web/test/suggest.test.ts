@@ -4,7 +4,12 @@
 import { describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { createTestProfile } from "./fixtures";
-import { suggestFollowups, suggestProfileQueries } from "@/lib/suggest";
+import {
+  peekSuggestions,
+  refreshSuggestions,
+  suggestFollowups,
+  suggestProfileQueries,
+} from "@/lib/suggest";
 
 describe("suggestProfileQueries", () => {
   it("personalizes from goals, near level-ups, and kill counts", async () => {
@@ -57,6 +62,45 @@ describe("suggestProfileQueries", () => {
     await db.goal.create({ data: { profileId, title: "Infernal cape", status: "ACTIVE" } });
     const second = await suggestProfileQueries(profileId);
     expect(second).toEqual(first); // served from cache despite new goal
+  });
+
+  it("peek never blocks: returns heuristics + needsRefresh when cache is cold", async () => {
+    const profileId = await createTestProfile();
+    await db.goal.create({ data: { profileId, title: "Max cape", status: "ACTIVE" } });
+
+    const { suggestions, needsRefresh } = await peekSuggestions(profileId, "overview");
+    expect(needsRefresh).toBe(true);
+    expect(suggestions.length).toBeGreaterThanOrEqual(2);
+    // Nothing was persisted by peek — it's read-only.
+    expect(await db.suggestionCache.findUnique({ where: { profileId_context: { profileId, context: "overview" } } })).toBeNull();
+  });
+
+  it("refresh persists to the durable cache and peek then serves it without refresh", async () => {
+    const profileId = await createTestProfile();
+    await refreshSuggestions(profileId, "skills");
+
+    const row = await db.suggestionCache.findUnique({
+      where: { profileId_context: { profileId, context: "skills" } },
+    });
+    expect(row).not.toBeNull();
+
+    const peek = await peekSuggestions(profileId, "skills");
+    expect(peek.needsRefresh).toBe(false);
+    expect(peek.suggestions).toEqual(JSON.parse(row!.payload));
+  });
+
+  it("serves a stale cache instantly while flagging it for refresh", async () => {
+    const profileId = await createTestProfile();
+    await refreshSuggestions(profileId, "bosses");
+    // Age the cache past the 6h TTL.
+    await db.suggestionCache.update({
+      where: { profileId_context: { profileId, context: "bosses" } },
+      data: { updatedAt: new Date(Date.now() - 7 * 60 * 60 * 1000) },
+    });
+
+    const peek = await peekSuggestions(profileId, "bosses");
+    expect(peek.needsRefresh).toBe(true); // stale -> refresh
+    expect(peek.suggestions.length).toBeGreaterThanOrEqual(2); // but still served
   });
 
   it("biases heuristics by context and caches each context separately", async () => {

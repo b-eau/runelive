@@ -99,6 +99,7 @@ model Profile {
   combatAchievements CombatAchievementState?
   collectionLog      CollectionLogState?
   collectionLogSlots CollectionLogSlot[]
+  suggestionCache    SuggestionCache[]
 
   @@unique([accountId, kind])
 }
@@ -311,6 +312,21 @@ model CollectionLogSlot {
 
   @@id([profileId, itemId])
   @@index([profileId, obtained])
+}
+
+// Durable cache of generated per-tab suggestions. Persisting these (instead
+// of an in-memory Map that dies on every serverless cold start) keeps the
+// "Ask Sidekick" chips instant and consistent across instances; the slow LLM
+// regeneration runs in the background after a response is sent.
+model SuggestionCache {
+  profileId String
+  context   String
+  payload   String // JSON string[]
+  updatedAt DateTime
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, context])
 }
 
 // A chat thread. Users can run several in parallel and revisit old ones;

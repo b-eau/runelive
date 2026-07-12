@@ -1,10 +1,16 @@
 // Personalized conversation starters for the sidekick chat and each profile
-// tab. Cached per (profile, context) in lib/suggest.ts, so cheap to call on
-// every page/chat open.
+// tab. Responds instantly from the durable cache (or grounded heuristics),
+// and regenerates via the LLM in the background so the slow call never
+// blocks the response.
 
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { authorizedProfile } from "@/lib/data";
-import { SUGGEST_CONTEXTS, suggestProfileQueries, type SuggestContext } from "@/lib/suggest";
+import {
+  peekSuggestions,
+  refreshSuggestions,
+  SUGGEST_CONTEXTS,
+  type SuggestContext,
+} from "@/lib/suggest";
 
 export const maxDuration = 30;
 
@@ -19,5 +25,15 @@ export async function GET(req: NextRequest) {
     ? (raw as SuggestContext)
     : "chat";
 
-  return NextResponse.json({ suggestions: await suggestProfileQueries(profileId, context) });
+  const { suggestions, needsRefresh } = await peekSuggestions(profileId, context);
+  if (needsRefresh) {
+    // Runs after the response is sent (Vercel waitUntil); the model call
+    // never blocks this request.
+    after(() => refreshSuggestions(profileId, context).catch(() => {}));
+  }
+
+  return NextResponse.json(
+    { suggestions },
+    { headers: { "Cache-Control": "private, max-age=120" } },
+  );
 }
