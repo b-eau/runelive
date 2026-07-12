@@ -4,6 +4,7 @@ import { authorizedProfile } from "@/lib/data";
 import { formatGp } from "@/lib/osrs";
 import { bankSeries } from "@/lib/series";
 import TrendChart from "@/components/TrendChart";
+import SuggestionBar from "@/components/SuggestionBar";
 import BankTable from "./BankTable";
 
 export const metadata = { title: "Bank" };
@@ -54,6 +55,7 @@ export default async function BankPage({ params }: { params: Promise<{ profileId
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <SuggestionBar profileId={profileId} context="bank" />
       <div className="card">
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
           <h3>Bank value — last 12 months</h3>

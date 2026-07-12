@@ -5,6 +5,7 @@ import { authorizedProfile } from "@/lib/data";
 import { titleCase } from "@/lib/osrs";
 import { kcSeries } from "@/lib/series";
 import TrendChart from "@/components/TrendChart";
+import SuggestionBar from "@/components/SuggestionBar";
 
 export const metadata = { title: "Bosses" };
 
@@ -29,9 +30,11 @@ export default async function BossesPage({
   const selectedKc = kcs.find((k) => k.boss === selected);
 
   return (
-    <div className="grid cols-2" style={{ alignItems: "start" }}>
-      <div className="card">
-        <h3>Kill counts</h3>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <SuggestionBar profileId={profileId} context="bosses" />
+      <div className="grid cols-2" style={{ alignItems: "start" }}>
+        <div className="card">
+          <h3>Kill counts</h3>
         <p className="sub">Synced from in-game kill count messages</p>
         {kcs.length === 0 ? (
           <div className="empty">No boss kills tracked yet. Go bother a boss!</div>
@@ -75,6 +78,7 @@ export default async function BossesPage({
         ) : (
           <div className="empty">Select a boss to see its trend.</div>
         )}
+        </div>
       </div>
     </div>
   );

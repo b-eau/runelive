@@ -29,38 +29,98 @@ const SUGGESTION_SCHEMA = {
   required: ["suggestions"],
 };
 
-/** Data-aware fallback that needs no LLM. */
-async function heuristicProfileSuggestions(profileId: string): Promise<string[]> {
-  const [skills, goals, topKc, quests] = await Promise.all([
+// Where the suggestions appear. "chat" is the general starter set; the others
+// bias both the heuristics and the LLM toward that tab's subject matter.
+export type SuggestContext = "chat" | "overview" | "skills" | "quests" | "bank" | "bosses";
+
+export const SUGGEST_CONTEXTS: SuggestContext[] = ["chat", "overview", "skills", "quests", "bank", "bosses"];
+
+const CONTEXT_FOCUS: Record<SuggestContext, string> = {
+  chat: "",
+  overview: "Focus on the player's headline progress: goals, weekly gains, and their most impactful next milestone.",
+  skills: "Focus every question on skill training: the fastest routes to their next levels, efficient methods, and XP goals.",
+  quests: "Focus on quests the player has NOT finished, quest rewards worth chasing, and achievement diary tiers still open. If all quests are done, do not mention quests or the quest cape.",
+  bank: "Focus on the player's wealth: money-making methods that fit their stats, gear upgrades they could afford, and what to buy next.",
+  bosses: "Focus on PvM: which boss to learn next given their kill counts, gear upgrades for bosses they already do, and kill-count milestones.",
+};
+
+/** Shared LLM call for all suggestion flavors. Returns [] on any failure. */
+async function llmSuggestions(system: string, prompt: string, max: number): Promise<string[]> {
+  if (!llmEnabled()) return [];
+  try {
+    if (anthropicEnabled()) {
+      const client = new Anthropic();
+      const response = await client.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 400,
+        output_config: {
+          format: { type: "json_schema", schema: { ...SUGGESTION_SCHEMA, additionalProperties: false } },
+        },
+        system,
+        messages: [{ role: "user", content: prompt }],
+      });
+      const text = response.content.find((b) => b.type === "text");
+      if (!text || text.type !== "text") return [];
+      return sanitize((JSON.parse(text.text) as { suggestions?: string[] }).suggestions).slice(0, max);
+    }
+    const parsed = await runGeminiJson<{ suggestions?: string[] }>({ system, prompt, schema: SUGGESTION_SCHEMA });
+    return sanitize(parsed.suggestions).slice(0, max);
+  } catch (e) {
+    console.warn("suggestion generation failed", e);
+    return [];
+  }
+}
+
+/** Data-aware fallback that needs no LLM, biased toward the given context. */
+async function heuristicProfileSuggestions(profileId: string, context: SuggestContext): Promise<string[]> {
+  const [skills, goals, topKc, quests, bank] = await Promise.all([
     db.skillState.findMany({ where: { profileId, skill: { not: "overall" } } }),
     db.goal.findMany({ where: { profileId, status: "ACTIVE" }, take: 2 }),
     db.killCountState.findFirst({ where: { profileId }, orderBy: { kc: "desc" } }),
     db.questState.findMany({ where: { profileId }, select: { quest: true, state: true } }),
+    db.containerState.findUnique({ where: { profileId_container: { profileId, container: "BANK" } } }),
   ]);
 
-  const suggestions: string[] = [];
-  for (const goal of goals) {
-    suggestions.push(`What should I do this week toward "${goal.title}"?`);
-  }
-
-  const trainable = skills.filter((s) => s.level < 99);
-  const closest = trainable
+  const closest = skills
+    .filter((s) => s.level < 99)
     .map((s) => ({ ...s, remaining: xpForLevel(s.level + 1) - Number(s.xp) }))
     .filter((s) => s.remaining > 0) // guard against stale level vs xp drift
     .sort((a, b) => a.remaining - b.remaining)[0];
-  if (closest) {
-    suggestions.push(
-      `What's the fastest way to get ${titleCase(closest.skill)} ${closest.level + 1}? Only ${formatXp(closest.remaining)} xp to go.`,
-    );
-  }
-
-  if (topKc) {
-    suggestions.push(`After ${topKc.kc} ${titleCase(topKc.boss)} kills, what boss should I learn next?`);
-  }
-  // Only pitch questing when real quests (not miniquests) remain.
   const remainingQuests = quests.filter((q) => q.state !== "FINISHED" && !isMiniquest(q.quest));
-  if (remainingQuests.length > 0) {
-    suggestions.push("Which quests should I knock out next, given my stats?");
+
+  const goalPrompts = goals.map((g) => `What should I do this week toward "${g.title}"?`);
+  const nextLevel = closest
+    ? `What's the fastest way to get ${titleCase(closest.skill)} ${closest.level + 1}? Only ${formatXp(closest.remaining)} xp to go.`
+    : null;
+  const nextBoss = topKc ? `After ${topKc.kc} ${titleCase(topKc.boss)} kills, what boss should I learn next?` : null;
+  const nextQuest = remainingQuests.length > 0 ? "Which quests should I knock out next, given my stats?" : null;
+
+  // Context-specific ordering: the most relevant grounded prompts first, then
+  // generic fillers to reach four.
+  let ordered: (string | null)[];
+  switch (context) {
+    case "skills":
+      ordered = [nextLevel, ...goalPrompts, "Which skills are lagging behind the rest of my account?", "How much XP did I gain this week, and in what?"];
+      break;
+    case "quests":
+      ordered = [nextQuest, "Which quests unlock the most useful rewards for me?", "What am I missing for my next achievement diary tier?", ...goalPrompts];
+      break;
+    case "bank":
+      ordered = [
+        bank ? "What money-makers fit my current stats?" : null,
+        "What gear upgrade should I buy next?",
+        "What's the best value item I own that I'm not using?",
+        "How has my bank value trended lately?",
+      ];
+      break;
+    case "bosses":
+      ordered = [nextBoss, "What gear upgrades would speed up my main boss?", "Which boss is most profitable at my stats?", ...goalPrompts];
+      break;
+    case "overview":
+      ordered = [...goalPrompts, nextLevel, nextBoss, "What should I focus on in my next play session?"];
+      break;
+    default:
+      ordered = [...goalPrompts, nextLevel, nextBoss, nextQuest];
   }
 
   const fillers = [
@@ -69,11 +129,16 @@ async function heuristicProfileSuggestions(profileId: string): Promise<string[]>
     "What's a realistic goal for me this month?",
     "What should I focus on in my next play session?",
   ];
-  for (const filler of fillers) {
-    if (suggestions.length >= 4) break;
-    suggestions.push(filler);
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const s of [...ordered, ...fillers]) {
+    if (s && !seen.has(s)) {
+      seen.add(s);
+      out.push(s);
+    }
+    if (out.length >= 4) break;
   }
-  return suggestions.slice(0, 4);
+  return out;
 }
 
 function sanitize(raw: string[] | undefined): string[] {
@@ -97,75 +162,30 @@ export async function suggestFollowups(
   userMessage: string,
   reply: string,
 ): Promise<string[]> {
-  if (!llmEnabled()) return [];
-  try {
-    const prompt = `Player context:\n${await buildContext(profileId)}\n\nThe player asked:\n${userMessage.slice(0, 1000)}\n\nThe assistant replied:\n${reply.slice(0, 2500)}\n\nGenerate exactly 3 likely followup messages.`;
-    if (anthropicEnabled()) {
-      const client = new Anthropic();
-      const response = await client.messages.create({
-        model: "claude-haiku-4-5",
-        max_tokens: 300,
-        output_config: {
-          format: { type: "json_schema", schema: { ...SUGGESTION_SCHEMA, additionalProperties: false } },
-        },
-        system: FOLLOWUP_SYSTEM,
-        messages: [{ role: "user", content: prompt }],
-      });
-      const text = response.content.find((b) => b.type === "text");
-      if (!text || text.type !== "text") return [];
-      return sanitize((JSON.parse(text.text) as { suggestions?: string[] }).suggestions).slice(0, 3);
-    }
-    const parsed = await runGeminiJson<{ suggestions?: string[] }>({
-      system: FOLLOWUP_SYSTEM,
-      prompt,
-      schema: SUGGESTION_SCHEMA,
-    });
-    return sanitize(parsed.suggestions).slice(0, 3);
-  } catch (e) {
-    console.warn("followup generation failed", e);
-    return [];
-  }
+  const prompt = `Player context:\n${await buildContext(profileId)}\n\nThe player asked:\n${userMessage.slice(0, 1000)}\n\nThe assistant replied:\n${reply.slice(0, 2500)}\n\nGenerate exactly 3 likely followup messages.`;
+  return llmSuggestions(FOLLOWUP_SYSTEM, prompt, 3);
 }
 
-export async function suggestProfileQueries(profileId: string): Promise<string[]> {
-  const hit = cache.get(profileId);
+/**
+ * Personalized prompts for a given surface. Cached per (profile, context)
+ * for 6h. Grounded heuristics are the floor; the LLM upgrades them when a
+ * key is configured.
+ */
+export async function suggestProfileQueries(
+  profileId: string,
+  context: SuggestContext = "chat",
+): Promise<string[]> {
+  const cacheKey = `${profileId}:${context}`;
+  const hit = cache.get(cacheKey);
   if (hit && hit.expiresAt > Date.now()) return hit.suggestions;
 
-  let suggestions = await heuristicProfileSuggestions(profileId);
-  if (llmEnabled()) {
-    try {
-      const prompt = `Player context:\n${await buildContext(profileId)}\n\nGenerate exactly 4 starter questions.`;
-      if (anthropicEnabled()) {
-        const client = new Anthropic();
-        const response = await client.messages.create({
-          model: "claude-haiku-4-5",
-          max_tokens: 400,
-          output_config: {
-            format: { type: "json_schema", schema: { ...SUGGESTION_SCHEMA, additionalProperties: false } },
-          },
-          system: SUGGESTION_SYSTEM,
-          messages: [{ role: "user", content: prompt }],
-        });
-        const text = response.content.find((b) => b.type === "text");
-        if (text && text.type === "text") {
-          const fresh = sanitize((JSON.parse(text.text) as { suggestions?: string[] }).suggestions);
-          if (fresh.length >= 2) suggestions = fresh;
-        }
-      } else {
-        const parsed = await runGeminiJson<{ suggestions?: string[] }>({
-          system: SUGGESTION_SYSTEM,
-          prompt,
-          schema: SUGGESTION_SCHEMA,
-        });
-        const fresh = sanitize(parsed.suggestions);
-        if (fresh.length >= 2) suggestions = fresh;
-      }
-    } catch (e) {
-      console.warn("profile suggestion generation failed, using heuristics", e);
-    }
-  }
+  let suggestions = await heuristicProfileSuggestions(profileId, context);
+  const focus = CONTEXT_FOCUS[context];
+  const prompt = `Player context:\n${await buildContext(profileId)}\n\n${focus ? `${focus}\n\n` : ""}Generate exactly 4 starter questions.`;
+  const fresh = await llmSuggestions(focus ? `${SUGGESTION_SYSTEM}\n\n${focus}` : SUGGESTION_SYSTEM, prompt, 4);
+  if (fresh.length >= 2) suggestions = fresh;
 
-  cache.set(profileId, { suggestions, expiresAt: Date.now() + SUGGESTION_TTL_MS });
+  cache.set(cacheKey, { suggestions, expiresAt: Date.now() + SUGGESTION_TTL_MS });
   if (cache.size > 5000) {
     const oldest = cache.keys().next().value;
     if (oldest) cache.delete(oldest);

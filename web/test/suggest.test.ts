@@ -58,4 +58,18 @@ describe("suggestProfileQueries", () => {
     const second = await suggestProfileQueries(profileId);
     expect(second).toEqual(first); // served from cache despite new goal
   });
+
+  it("biases heuristics by context and caches each context separately", async () => {
+    const profileId = await createTestProfile();
+    await db.skillState.create({ data: { profileId, skill: "slayer", xp: 100_000n, level: 40 } });
+
+    const bank = await suggestProfileQueries(profileId, "bank");
+    const bosses = await suggestProfileQueries(profileId, "bosses");
+    expect(bank).toHaveLength(4);
+    expect(bosses).toHaveLength(4);
+    // Bank leads with money/gear framing; bosses leads with PvM framing.
+    expect(bank.join(" ")).toMatch(/money-maker|gear upgrade|value/i);
+    expect(bosses.join(" ")).toMatch(/boss|profitable/i);
+    expect(bank).not.toEqual(bosses); // distinct cache entries
+  });
 });

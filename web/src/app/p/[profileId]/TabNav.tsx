@@ -9,6 +9,7 @@ const TABS = [
   { slug: "quests", label: "Quests" },
   { slug: "bank", label: "Bank" },
   { slug: "bosses", label: "Bosses" },
+  { slug: "achievements", label: "Achievements" },
   { slug: "chat", label: "Sidekick ✨" },
 ];
 

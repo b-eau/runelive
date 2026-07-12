@@ -379,6 +379,37 @@ async function main() {
     }
   }
 
+  // ------------------------------------------- combat achievements + clog
+  await db.combatAchievementState.create({
+    data: {
+      profileId: main.id,
+      points: 512,
+      thresholds: JSON.stringify({ EASY: 33, MEDIUM: 115, HARD: 304, ELITE: 820, MASTER: 1465, GRANDMASTER: 2525 }),
+      easy: true,
+      medium: true,
+      hard: true,
+      elite: false,
+      master: false,
+      grandmaster: false,
+      updatedAt: now,
+    },
+  });
+  await db.collectionLogState.create({
+    data: {
+      profileId: main.id,
+      obtained: 612,
+      total: 1568,
+      sections: JSON.stringify({
+        bosses: { obtained: 214, total: 632 },
+        raids: { obtained: 41, total: 96 },
+        clues: { obtained: 208, total: 465 },
+        minigames: { obtained: 74, total: 173 },
+        other: { obtained: 75, total: 202 },
+      }),
+      updatedAt: now,
+    },
+  });
+
   // ------------------------------------------------------------ containers
   const priceMap = new Map(ITEM_PRICES.map((p) => [p.itemId, p.price]));
   const valueOf = (items: { id: number; qty: number }[]) =>

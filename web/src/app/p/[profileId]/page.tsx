@@ -6,6 +6,7 @@ import { isRsnLinked } from "@/lib/rsnLink";
 import { formatGp, formatXp, titleCase } from "@/lib/osrs";
 import { bankSeries, recentGains, xpSeries } from "@/lib/series";
 import TrendChart from "@/components/TrendChart";
+import SuggestionBar from "@/components/SuggestionBar";
 import GoalsPanel from "./GoalsPanel";
 
 export const metadata = { title: "Overview" };
@@ -49,6 +50,7 @@ export default async function OverviewPage({ params }: { params: Promise<{ profi
           to sync your bank, quests, gear, and live progress; everything here carries over.
         </div>
       )}
+      <SuggestionBar profileId={profileId} context="overview" />
       <div className="grid cols-4">
         <div className="stat">
           <span className="label">Total level</span>

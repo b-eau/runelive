@@ -45,16 +45,20 @@ export default function ChatPanel({
   displayName,
   demoMode,
   serverTts = false,
+  initialPrompt,
 }: {
   profileId: string;
   displayName: string;
   demoMode: boolean;
   /** True when the server offers ElevenLabs TTS (browser TTS is the fallback). */
   serverTts?: boolean;
+  /** Prompt to auto-send on mount, e.g. from a tab's suggestion deep-link. */
+  initialPrompt?: string;
 }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
+  const [loadingConversation, setLoadingConversation] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>(FALLBACK_SUGGESTIONS);
   const [followups, setFollowups] = useState<string[]>([]);
   const [showSuggest, setShowSuggest] = useState(false);
@@ -102,10 +106,12 @@ export default function ChatPanel({
       setFollowups([]);
       setRailOpen(false);
       setShowSuggest(false);
+      setLoadingConversation(true);
       fetch(`/api/chat?profileId=${profileId}&conversationId=${id}`)
         .then((r) => r.json())
         .then((d) => setMessages(d.messages ?? []))
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => setLoadingConversation(false));
     },
     [profileId],
   );
@@ -233,6 +239,15 @@ export default function ChatPanel({
     [busy, profileId, activeId, speak],
   );
 
+  // Auto-send a deep-linked prompt (e.g. from a tab's suggestion chip) once.
+  const sentInitialRef = useRef(false);
+  useEffect(() => {
+    if (initialPrompt && !sentInitialRef.current) {
+      sentInitialRef.current = true;
+      void send(initialPrompt, false, null);
+    }
+  }, [initialPrompt, send]);
+
   const stopVoice = useCallback(() => {
     setVoiceMode("off");
     recognizerRef.current?.abort();
@@ -344,7 +359,12 @@ export default function ChatPanel({
           </div>
         )}
         <div className="chat-log" ref={logRef}>
-          {messages.length === 0 && !busy && (
+          {loadingConversation && (
+            <div className="empty" style={{ margin: "auto" }} aria-live="polite">
+              <span className="thinking-dots">Loading conversation…</span>
+            </div>
+          )}
+          {messages.length === 0 && !busy && !loadingConversation && (
             <div className="empty" style={{ margin: "auto" }}>
               <div style={{ fontSize: 30, marginBottom: 10 }}>✨</div>
               <p>

@@ -435,6 +435,15 @@ select:focus-visible {
 .skill-meta {
   min-width: 0;
   flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.skill-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .skill-name {
@@ -444,12 +453,14 @@ select:focus-visible {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .skill-level {
   font-size: 16px;
   font-weight: 700;
   line-height: 1.2;
+  flex-shrink: 0;
 }
 
 .skill-bar {
@@ -691,6 +702,97 @@ select:focus-visible {
   cursor: pointer;
 }
 .suggest-pop button:hover { background: var(--surface-2); color: var(--ink-1); }
+
+/* --------------------------------------------------------------- meters */
+
+.meter {
+  height: 6px;
+  background: var(--surface-3);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--series-1);
+}
+
+.meter > span.gold {
+  background: var(--gold);
+}
+
+.ach-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ach-row:last-child {
+  border-bottom: none;
+}
+
+.ach-tier {
+  width: 104px;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ach-status {
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------- suggestion bar (tabs) */
+
+.suggest-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  background: color-mix(in oklab, var(--gold) 7%, var(--surface-1));
+  border: 1px solid color-mix(in oklab, var(--gold) 22%, transparent);
+  border-radius: var(--radius);
+}
+
+.suggest-bar-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gold);
+  white-space: nowrap;
+  padding-top: 6px;
+}
+
+.suggest-bar-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.suggest-chip {
+  display: inline-block;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 12px;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.suggest-chip:hover {
+  color: var(--ink);
+  background: var(--surface-2);
+  border-color: var(--gold);
+}
 
 /* ------------------------------------------------------------------ misc */
 

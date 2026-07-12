@@ -5,6 +5,7 @@ import { authorizedProfile } from "@/lib/data";
 import { SKILLS, formatXp, levelProgress, titleCase, xpForLevel } from "@/lib/osrs";
 import { xpSeries } from "@/lib/series";
 import TrendChart from "@/components/TrendChart";
+import SuggestionBar from "@/components/SuggestionBar";
 import { SKILL_EMOJI } from "@/components/skillEmoji";
 
 export const metadata = { title: "Skills" };
@@ -32,6 +33,7 @@ export default async function SkillsPage({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <SuggestionBar profileId={profileId} context="skills" />
       <div className="card">
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
           <h3 style={{ fontSize: 17 }}>
@@ -92,9 +94,11 @@ export default async function SkillsPage({
                 {SKILL_EMOJI[skill]}
               </span>
               <span className="skill-meta">
-                <span className="skill-name">{titleCase(skill)}</span>
-                <span className="skill-level" style={maxed ? { color: "var(--gold)" } : undefined}>
-                  {level.toLocaleString()}
+                <span className="skill-head">
+                  <span className="skill-name">{titleCase(skill)}</span>
+                  <span className="skill-level" style={maxed ? { color: "var(--gold)" } : undefined}>
+                    {level.toLocaleString()}
+                  </span>
                 </span>
                 <span className="skill-bar">
                   <span style={{ display: "block", width: `${Math.round(progress * 100)}%` }} className={maxed ? "maxed" : ""}>
