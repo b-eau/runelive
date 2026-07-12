@@ -6,7 +6,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { betaTool } from "@anthropic-ai/sdk/helpers/beta/json-schema";
 import { db } from "./db";
 import { geminiEnabled, runGeminiChat } from "./gemini";
-import { formatGp, formatXp, titleCase } from "./osrs";
+import { formatGp, formatXp, levelForXp, titleCase, xpForLevel } from "./osrs";
+import { isMiniquest } from "./quests";
 
 export const SIDEKICK_MODEL = "claude-opus-4-8";
 
@@ -21,11 +22,12 @@ export function llmEnabled(): boolean {
 
 /** Compact account summary injected up-front so common questions need no tool call. */
 export async function buildContext(profileId: string): Promise<string> {
-  const [profile, skills, goals, questAgg, bank, topKc] = await Promise.all([
+  const [profile, skills, goals, quests, diaries, bank, topKc] = await Promise.all([
     db.profile.findUnique({ where: { id: profileId }, include: { account: true } }),
     db.skillState.findMany({ where: { profileId } }),
     db.goal.findMany({ where: { profileId, status: "ACTIVE" } }),
-    db.questState.groupBy({ by: ["state"], where: { profileId }, _count: true }),
+    db.questState.findMany({ where: { profileId } }),
+    db.diaryState.findMany({ where: { profileId } }),
     db.containerState.findUnique({ where: { profileId_container: { profileId, container: "BANK" } } }),
     db.killCountState.findMany({ where: { profileId }, orderBy: { kc: "desc" }, take: 8 }),
   ]);
@@ -37,14 +39,40 @@ export async function buildContext(profileId: string): Promise<string> {
     .map((s) => `${titleCase(s.skill)} ${s.level} (${formatXp(s.xp)} xp)`)
     .join(", ");
   const overall = skills.find((s) => s.skill === "overall");
-  const questsDone = questAgg.find((q) => q.state === "FINISHED")?._count ?? 0;
-  const questsTotal = questAgg.reduce((a, q) => a + q._count, 0);
+
+  // Miniquests award no quest points and don't gate the Quest point cape —
+  // report them separately so the model never conflates the two.
+  const fullQuests = quests.filter((q) => !isMiniquest(q.quest));
+  const minis = quests.filter((q) => isMiniquest(q.quest));
+  const fullDone = fullQuests.filter((q) => q.state === "FINISHED").length;
+  const miniDone = minis.filter((q) => q.state === "FINISHED").length;
+  const remainingFull = fullQuests.filter((q) => q.state !== "FINISHED").map((q) => q.quest);
+  const questLine =
+    quests.length === 0
+      ? "Quest data not synced yet."
+      : remainingFull.length === 0
+        ? `Quests: ALL ${fullDone} quests complete — the Quest point cape is unlocked. Miniquests (award no quest points, never gate the quest cape): ${miniDone}/${minis.length} complete${minis.length - miniDone > 0 ? `, remaining: ${minis.filter((q) => q.state !== "FINISHED").map((q) => q.quest).join(", ")}` : ""}.`
+        : `Quests: ${fullDone}/${fullQuests.length} complete (${remainingFull.length} remaining). Miniquests (separate; no quest points): ${miniDone}/${minis.length} complete.`;
+
+  const diaryByArea = new Map<string, string[]>();
+  for (const d of diaries) {
+    if (!d.completed) continue;
+    if (!diaryByArea.has(d.area)) diaryByArea.set(d.area, []);
+    diaryByArea.get(d.area)!.push(titleCase(d.tier.toLowerCase()));
+  }
+  const diaryLine =
+    diaries.length === 0
+      ? ""
+      : diaryByArea.size === 0
+        ? "Achievement diaries: none complete yet."
+        : `Achievement diaries complete: ${[...diaryByArea.entries()].map(([area, tiers]) => `${area} (${tiers.join("/")})`).join(", ")}.`;
 
   return [
     `Player: ${profile.account.displayName} — ${profile.kind} profile, account type ${profile.accountType}, combat level ${profile.combatLevel ?? "unknown"}.`,
     overall ? `Total level ${overall.level}, total XP ${formatXp(overall.xp)}.` : "",
     `Skills: ${skillLines}.`,
-    questsTotal ? `Quests: ${questsDone}/${questsTotal} complete.` : "Quest data not synced yet.",
+    questLine,
+    diaryLine,
     bank ? `Bank value ≈ ${formatGp(bank.value)} gp.` : "Bank not synced yet.",
     topKc.length ? `Top boss KC: ${topKc.map((k) => `${titleCase(k.boss)} ${k.kc}`).join(", ")}.` : "",
     goals.length
@@ -115,7 +143,12 @@ export function buildTools(profileId: string) {
         orderBy: { quest: "asc" },
       });
       if (quests.length === 0) return "No quests match (quest data may not be synced yet).";
-      return quests.map((q) => (state === "ALL" ? `${q.quest} — ${q.state}` : q.quest)).join("\n");
+      return quests
+        .map((q) => {
+          const mini = isMiniquest(q.quest) ? " [miniquest — no quest points, doesn't gate the quest cape]" : "";
+          return state === "ALL" ? `${q.quest} — ${q.state}${mini}` : `${q.quest}${mini}`;
+        })
+        .join("\n");
     },
   });
 
@@ -181,7 +214,68 @@ export function buildTools(profileId: string) {
     },
   });
 
-  return [searchBank, viewQuestLog, viewDiaries, viewKc, xpGains];
+  const skillTarget = betaTool({
+    name: "calc_skill_target",
+    description:
+      "Skill progress calculator: computes exact XP remaining from the player's current XP to a target level. Use whenever the player asks how far a level is, how long something will take, or when planning goals — never estimate XP math yourself.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        skill: { type: "string", description: "Skill name, e.g. 'herblore'" },
+        target_level: { type: "integer", description: "Target level (2-99, or up to 126 virtual)" },
+      },
+      required: ["skill", "target_level"],
+    },
+    run: async (input) => {
+      const { skill, target_level } = input as { skill: string; target_level: number };
+      const state = await db.skillState.findUnique({
+        where: { profileId_skill: { profileId, skill: skill.toLowerCase().trim() } },
+      });
+      if (!state) return `No synced data for skill "${skill}".`;
+      const target = Math.min(Math.max(target_level, 2), 126);
+      const currentXp = Number(state.xp);
+      const targetXp = xpForLevel(target);
+      const remaining = targetXp - currentXp;
+      if (remaining <= 0) {
+        return `${titleCase(state.skill)} is already level ${levelForXp(currentXp)} (${formatXp(currentXp)} xp) — target ${target} (${formatXp(targetXp)} xp) is met.`;
+      }
+      return `${titleCase(state.skill)}: level ${state.level} with ${currentXp.toLocaleString()} xp. Level ${target} needs ${targetXp.toLocaleString()} xp — ${remaining.toLocaleString()} xp remaining.`;
+    },
+  });
+
+  const lookupItem = betaTool({
+    name: "lookup_item",
+    description:
+      "Look up any OSRS item by name (owned or not): live GE guide price, high alch value, members status, and examine text. Use for gear-upgrade advice, affordability checks, and money-making math.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Item name or substring, e.g. 'dragon warhammer'" },
+      },
+      required: ["query"],
+    },
+    run: async (input) => {
+      const { query } = input as { query: string };
+      const items = await db.itemPrice.findMany({
+        where: { name: { contains: query.trim(), mode: "insensitive" } },
+        orderBy: { price: "desc" },
+        take: 8,
+      });
+      if (items.length === 0) return `No items matching "${query}" in the catalog.`;
+      return items
+        .map((i) => {
+          const bits = [
+            i.price > 0 ? `GE ≈ ${formatGp(i.price)} gp` : "untradeable or no GE price",
+            i.highAlch ? `high alch ${formatGp(i.highAlch)} gp` : "",
+            i.members === false ? "F2P" : i.members ? "members" : "",
+          ].filter(Boolean);
+          return `${i.name} — ${bits.join(", ")}${i.examine ? ` — "${i.examine}"` : ""}`;
+        })
+        .join("\n");
+    },
+  });
+
+  return [searchBank, viewQuestLog, viewDiaries, viewKc, xpGains, skillTarget, lookupItem];
 }
 
 export function systemPrompt(context: string): string {

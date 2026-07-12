@@ -53,6 +53,7 @@ export default function ChatPanel({
   const [activeId, setActiveId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Msg[]>([]);
   const [suggestions, setSuggestions] = useState<string[]>(FALLBACK_SUGGESTIONS);
+  const [followups, setFollowups] = useState<string[]>([]);
   const [showSuggest, setShowSuggest] = useState(false);
   const [railOpen, setRailOpen] = useState(false);
   const [input, setInput] = useState("");
@@ -85,6 +86,7 @@ export default function ChatPanel({
   const newChat = useCallback(() => {
     setActiveId(null);
     setMessages([]);
+    setFollowups([]);
     setRailOpen(false);
     setShowSuggest(false);
   }, []);
@@ -93,6 +95,7 @@ export default function ChatPanel({
     (id: string) => {
       setActiveId(id);
       setMessages([]);
+      setFollowups([]);
       setRailOpen(false);
       setShowSuggest(false);
       fetch(`/api/chat?profileId=${profileId}&conversationId=${id}`)
@@ -115,6 +118,7 @@ export default function ChatPanel({
       setInput("");
       setInterim("");
       setShowSuggest(false);
+      setFollowups([]);
       setBusy(true);
       setMessages((m) => [
         ...(conversationId === activeId ? m : []),
@@ -126,6 +130,7 @@ export default function ChatPanel({
         let reply: string;
         let returnedId: string | undefined;
         let returnedTitle: string | undefined;
+        let returnedFollowups: string[] = [];
         try {
           const res = await fetch("/api/chat", {
             method: "POST",
@@ -139,10 +144,12 @@ export default function ChatPanel({
             : (body.error ?? "Sidekick hit a snag answering that. Try again in a moment.");
           returnedId = body.conversationId;
           returnedTitle = body.title;
+          if (Array.isArray(body.followups)) returnedFollowups = body.followups;
         } catch {
           reply = "That took too long and timed out — try asking again, or break the question up.";
         }
         setMessages((m) => [...m, { id: `local-${Date.now()}-a`, role: "assistant", content: reply }]);
+        setFollowups(returnedFollowups);
         if (returnedId) {
           const id = returnedId;
           const title = returnedTitle ?? content.slice(0, 60);
@@ -309,6 +316,20 @@ export default function ChatPanel({
                 {m.content}
               </div>
             ),
+          )}
+          {followups.length > 0 && !busy && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignSelf: "flex-start", maxWidth: "82%" }}>
+              {followups.map((f) => (
+                <button
+                  key={f}
+                  className="btn ghost"
+                  style={{ fontSize: 12, border: "1px solid var(--border)", padding: "5px 10px" }}
+                  onClick={() => void send(f)}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
           )}
           {interim && (
             <div className="msg user" style={{ opacity: 0.6 }}>

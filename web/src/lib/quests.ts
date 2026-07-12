@@ -178,6 +178,50 @@ export const P2P_QUESTS = [
 
 export const ALL_QUESTS: string[] = [...F2P_QUESTS, ...P2P_QUESTS];
 
+// Miniquests as synced from RuneLite's quest list (names per the OSRS wiki).
+// They award no quest points and never gate the Quest point cape — critical
+// when reasoning about quest completion.
+export const MINIQUESTS = [
+  "Alfred Grimhand's Barcrawl",
+  "Barbarian Training",
+  "Bear Your Soul",
+  "Curse of the Empty Lord",
+  "Daddy's Home",
+  "The Enchanted Key",
+  "Enter the Abyss",
+  "Family Pest",
+  "The Frozen Door",
+  "The General's Shadow",
+  "His Faithful Servants",
+  "Hopespear's Will",
+  "In Search of Knowledge",
+  "Into the Tombs",
+  "Lair of Tarn Razorlor",
+  "The Lair of Tarn Razorlorn", // RuneLite's spelling
+  "Mage Arena I",
+  "The Mage Arena", // RuneLite's spelling
+  "Mage Arena II",
+  "The Mage Arena II", // RuneLite's spelling
+  "Skippy and the Mogres",
+  "Vale Totems",
+] as const;
+
+// Sources spell these inconsistently ("The Lair of Tarn Razorlorn",
+// "Mage Arena" vs "The Mage Arena") — normalize before comparing.
+function questKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/^the /, "")
+    .trim();
+}
+
+const MINIQUEST_KEYS = new Set(MINIQUESTS.map(questKey));
+
+export function isMiniquest(name: string): boolean {
+  return MINIQUEST_KEYS.has(questKey(name));
+}
+
 export const DIARY_AREAS = [
   "Ardougne",
   "Desert",

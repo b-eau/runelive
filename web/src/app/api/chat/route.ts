@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { authorizedProfile } from "@/lib/data";
 import { runSidekick } from "@/lib/sidekick";
+import { suggestFollowups } from "@/lib/suggest";
 
 export const maxDuration = 120; // LLM turns with tool use can take a while
 
@@ -58,11 +59,14 @@ export async function POST(req: NextRequest) {
   try {
     const reply = await runSidekick(profileId, history);
     console.log(`sidekick turn completed in ${Date.now() - startedAt}ms`);
-    await db.chatMessage.create({
-      data: { profileId, conversationId: conversation.id, role: "assistant", content: reply },
-    });
-    await db.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
-    return NextResponse.json({ reply, conversationId: conversation.id, title: conversation.title });
+    const [followups] = await Promise.all([
+      suggestFollowups(profileId, trimmed, reply),
+      db.chatMessage.create({
+        data: { profileId, conversationId: conversation.id, role: "assistant", content: reply },
+      }),
+      db.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } }),
+    ]);
+    return NextResponse.json({ reply, followups, conversationId: conversation.id, title: conversation.title });
   } catch (e) {
     console.error(`sidekick error after ${Date.now() - startedAt}ms`, e);
     return NextResponse.json(

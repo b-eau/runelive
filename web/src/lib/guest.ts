@@ -96,8 +96,11 @@ export function heuristicSuggestions(snapshot: GuestSnapshot): string[] {
  * Personalized starter queries via the cheap model; falls back to
  * heuristics without an API key or on any model/parsing failure.
  */
-const SUGGESTION_SYSTEM =
-  "You generate short starter questions an Old School RuneScape player might ask an AI assistant about their own account. Each must be specific to the player's actual stats (reference real skills/levels/bosses from the context), under 90 characters, phrased in first person, and interesting enough to make them want the answer. Vary the topics: training, bossing, milestones, efficiency.";
+const SUGGESTION_SYSTEM = `You generate short starter questions an Old School RuneScape player might ask an AI assistant about their own account.
+
+Grounding rules: every fact in a question must appear verbatim in the provided context — never invent requirements or pair stats the context doesn't connect (if you can't tie a specific fact to the topic, ask without numbers). Never suggest content the context shows is already finished.
+
+Style: under 90 characters, first person, specific to their actual stats, and interesting enough to make them want the answer. Vary the topics: training, bossing, milestones, efficiency.`;
 
 function sanitizeSuggestions(raw: string[] | undefined): string[] {
   return (raw ?? [])

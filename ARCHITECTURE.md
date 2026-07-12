@@ -103,3 +103,21 @@ signed-in user's own rows. Voice mode is browser-native (Web Speech API STT →
 same chat endpoint → speechSynthesis TTS), which keeps the realtime loop
 vendor-free; the context + tools make it "aware of key context upfront with
 tools available to query other information."
+
+### Agent tooling roadmap
+
+The tool loop now also carries planner-grade tools: `calc_skill_target`
+(exact XP math — the model is told never to estimate) and `lookup_item`
+(the full item catalog: every cache item's name via RuneLite's static dump,
+wiki examine/alch/members for tradeables, live GE prices refreshed daily by
+`/api/cron/prices`). The generalization path for "one-stop planning" tooling
+is: keep each capability a small, deterministic, profile-scoped tool the
+model composes, rather than baking calculators into prompts. Next candidates,
+in rough order of value:
+
+- **Money-making calculator** — wiki money-making-guide data keyed by the
+  player's actual stats/quests, priced live from the catalog.
+- **DPS calculator** — needs monster stats + gear bonuses (osrsreboxed or the
+  wiki's bestiary API) joined against the synced equipment container.
+- **Combat achievements & collection log** — plugin-side sync first (varbits
+  / collection-log interface), then context lines + tools like diaries have.

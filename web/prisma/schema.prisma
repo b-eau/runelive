@@ -293,9 +293,17 @@ model ChatMessage {
 }
 
 // Cached Grand Exchange guide prices (OSRS wiki), used to value banks.
+// Item catalog: every cache item's name (RuneLite static dump) enriched
+// with wiki semantics for tradeables (examine, alch, members) and live GE
+// prices. Synced by /api/cron/prices; see lib/itemCatalog.ts.
 model ItemPrice {
   itemId    Int      @id
   name      String
   price     Int
+  examine   String?
+  highAlch  Int?
+  members   Boolean?
   updatedAt DateTime @default(now())
+
+  @@index([name])
 }

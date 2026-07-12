@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { createTestProfile } from "./fixtures";
-import { suggestProfileQueries } from "@/lib/suggest";
+import { suggestFollowups, suggestProfileQueries } from "@/lib/suggest";
 
 describe("suggestProfileQueries", () => {
   it("personalizes from goals, near level-ups, and kill counts", async () => {
@@ -31,6 +31,24 @@ describe("suggestProfileQueries", () => {
     const profileId = await createTestProfile();
     const suggestions = await suggestProfileQueries(profileId);
     expect(suggestions).toHaveLength(4);
+  });
+
+  it("skips quest suggestions when only miniquests remain", async () => {
+    const profileId = await createTestProfile();
+    await db.questState.createMany({
+      data: [
+        { profileId, quest: "Cook's Assistant", state: "FINISHED" },
+        { profileId, quest: "Enter the Abyss", state: "NOT_STARTED" }, // miniquest
+      ],
+    });
+    const suggestions = await suggestProfileQueries(profileId);
+    expect(suggestions.join(" ")).not.toContain("Which quests should I knock out");
+  });
+
+  it("returns no followups without an LLM key", async () => {
+    const profileId = await createTestProfile();
+    const followups = await suggestFollowups(profileId, "hi", "hello there");
+    expect(followups).toEqual([]);
   });
 
   it("caches per profile", async () => {
