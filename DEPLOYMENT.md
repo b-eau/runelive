@@ -37,6 +37,7 @@ Supabase).
    | `EMAIL_FROM` | `OSRS Sidekick <sidekick@your-domain.com>` (verified in Resend) |
    | `ANTHROPIC_API_KEY` | from [console.anthropic.com](https://console.anthropic.com) — powers chat + voice |
    | `GEMINI_API_KEY` | alternative to `ANTHROPIC_API_KEY`, from [aistudio.google.com](https://aistudio.google.com) (Anthropic wins if both are set); `GEMINI_MODEL` optionally overrides the default `gemini-3.5-flash` |
+   | `ELEVENLABS_API_KEY` | optional, from [elevenlabs.io](https://elevenlabs.io) — high-quality voice-mode TTS (browser speechSynthesis is the fallback); `ELEVENLABS_VOICE_ID` overrides the default British female voice |
    | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | optional, see below |
 
 4. **Deployment Protection:** Vercel protects deployment URLs behind Vercel

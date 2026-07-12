@@ -44,10 +44,13 @@ export default function ChatPanel({
   profileId,
   displayName,
   demoMode,
+  serverTts = false,
 }: {
   profileId: string;
   displayName: string;
   demoMode: boolean;
+  /** True when the server offers ElevenLabs TTS (browser TTS is the fallback). */
+  serverTts?: boolean;
 }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -63,6 +66,7 @@ export default function ChatPanel({
   const [interim, setInterim] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
   const recognizerRef = useRef<SpeechRecognitionLike | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const voiceModeRef = useRef(voiceMode);
   voiceModeRef.current = voiceMode;
 
@@ -104,6 +108,65 @@ export default function ChatPanel({
         .catch(() => {});
     },
     [profileId],
+  );
+
+  const resumeListening = useCallback(() => {
+    if (voiceModeRef.current !== "off") {
+      setVoiceMode("listening");
+      try {
+        recognizerRef.current?.start();
+      } catch {}
+    }
+  }, []);
+
+  const browserSpeak = useCallback(
+    (text: string) => {
+      if (!("speechSynthesis" in window)) {
+        resumeListening();
+        return;
+      }
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.05;
+      utterance.onend = resumeListening;
+      utterance.onerror = resumeListening;
+      window.speechSynthesis.speak(utterance);
+    },
+    [resumeListening],
+  );
+
+  /** ElevenLabs via /api/tts when configured; browser speechSynthesis otherwise. */
+  const speak = useCallback(
+    async (reply: string) => {
+      const text = reply.replace(/[*_#`]/g, "").slice(0, 1200);
+      setVoiceMode("speaking");
+      if (serverTts) {
+        try {
+          const res = await fetch("/api/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text }),
+            signal: AbortSignal.timeout(20_000),
+          });
+          if (!res.ok) throw new Error(`tts ${res.status}`);
+          const url = URL.createObjectURL(await res.blob());
+          const audio = new Audio(url);
+          audioRef.current = audio;
+          const done = () => {
+            URL.revokeObjectURL(url);
+            if (audioRef.current === audio) audioRef.current = null;
+            resumeListening();
+          };
+          audio.onended = done;
+          audio.onerror = done;
+          await audio.play();
+          return;
+        } catch {
+          // Server TTS unavailable — fall through to the browser voice.
+        }
+      }
+      browserSpeak(text);
+    },
+    [serverTts, browserSpeak, resumeListening],
   );
 
   const send = useCallback(
@@ -160,37 +223,31 @@ export default function ChatPanel({
             return [{ id, title: existing?.title ?? title, updatedAt: new Date().toISOString() }, ...rest];
           });
         }
-        if (spoken && "speechSynthesis" in window) {
-          setVoiceMode("speaking");
-          const utterance = new SpeechSynthesisUtterance(reply.replace(/[*_#`]/g, "").slice(0, 1200));
-          utterance.rate = 1.05;
-          utterance.onend = () => {
-            if (voiceModeRef.current !== "off") {
-              setVoiceMode("listening");
-              try {
-                recognizerRef.current?.start();
-              } catch {}
-            }
-          };
-          window.speechSynthesis.speak(utterance);
+        if (spoken) {
+          void speak(reply);
         }
       } finally {
         setBusy(false);
       }
     },
-    [busy, profileId, activeId],
+    [busy, profileId, activeId, speak],
   );
 
   const stopVoice = useCallback(() => {
     setVoiceMode("off");
     recognizerRef.current?.abort();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     setInterim("");
   }, []);
 
   const startVoice = useCallback(() => {
     const rec = getRecognizer();
-    if (!rec || !("speechSynthesis" in window)) {
+    // Browser TTS is only required when the server doesn't provide it.
+    if (!rec || (!serverTts && !("speechSynthesis" in window))) {
       setVoiceSupported(false);
       return;
     }
@@ -230,7 +287,7 @@ export default function ChatPanel({
     try {
       rec.start();
     } catch {}
-  }, [send, stopVoice]);
+  }, [send, stopVoice, serverTts]);
 
   useEffect(() => () => stopVoice(), [stopVoice]);
 

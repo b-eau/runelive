@@ -15,6 +15,7 @@ export default async function ChatPage({ params }: { params: Promise<{ profileId
       profileId={profileId}
       displayName={profile.account.displayName}
       demoMode={!llmEnabled()}
+      serverTts={!!process.env.ELEVENLABS_API_KEY}
     />
   );
 }
