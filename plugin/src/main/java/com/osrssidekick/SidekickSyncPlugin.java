@@ -5,8 +5,11 @@ import com.google.inject.Provides;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -21,6 +24,7 @@ import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
+import net.runelite.api.EnumComposition;
 import net.runelite.api.GameState;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
@@ -28,6 +32,7 @@ import net.runelite.api.Quest;
 import net.runelite.api.Skill;
 import net.runelite.api.WorldType;
 import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.ScriptPreFired;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
@@ -60,6 +65,22 @@ public class SidekickSyncPlugin extends Plugin
 	private static final long CONTAINER_MIN_INTERVAL_MS = 30 * 1000L;
 	private static final int LOGIN_SYNC_DELAY_TICKS = 8;
 
+	// Karamja's easy/medium/hard tiers predate the varbit-per-tier system and
+	// only expose completed-task counters; these are the tier task totals.
+	private static final int KARAMJA_EASY_TASKS = 10;
+	private static final int KARAMJA_MEDIUM_TASKS = 19;
+	private static final int KARAMJA_HARD_TASKS = 10;
+
+	// Collection log cache structure (no gameval constants exist for these).
+	// Documented at https://chisel.weirdgloop.org/structs — the same walk
+	// WikiSync performs: top-level tab enum -> tab structs -> page item enums.
+	private static final int CLOG_TOP_LEVEL_TABS_ENUM = 2102;
+	private static final int CLOG_SUBTABS_PARAM = 683;
+	private static final int CLOG_PAGE_ITEMS_PARAM = 690;
+	private static final int CLOG_ITEM_REPLACEMENTS_ENUM = 3721;
+	// Fired once per obtained item while the collection log search list draws.
+	private static final int CLOG_SEARCH_DRAW_SCRIPT = 4100;
+
 	@Inject
 	private Client client;
 
@@ -91,6 +112,12 @@ public class SidekickSyncPlugin extends Plugin
 	private volatile long lastSyncedTotalXp = -1;
 	private volatile boolean levelUpPending;
 	private volatile int loginSyncCountdown = -1;
+
+	// Collection log search burst: obtained item ids arrive one script fire at
+	// a time; two ticks after the last fire the batch is flushed as one event.
+	// Only touched on the client thread.
+	private final Set<Integer> clogObtainedBurst = new HashSet<>();
+	private int clogScriptFiredTick = -1;
 
 	// snapshot of client identity, safe to read off the client thread
 	private volatile long accountHash = -1;
@@ -150,12 +177,21 @@ public class SidekickSyncPlugin extends Plugin
 		else if (event.getGameState() == GameState.LOGIN_SCREEN || event.getGameState() == GameState.HOPPING)
 		{
 			loginSyncCountdown = -1;
+			clogObtainedBurst.clear();
+			clogScriptFiredTick = -1;
 		}
 	}
 
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
+		// Flush a finished collection log search burst (see onScriptPreFired).
+		if (clogScriptFiredTick != -1 && client.getTickCount() >= clogScriptFiredTick + 2)
+		{
+			clogScriptFiredTick = -1;
+			enqueueCollectionLogItems();
+		}
+
 		if (loginSyncCountdown < 0)
 		{
 			return;
@@ -168,15 +204,88 @@ public class SidekickSyncPlugin extends Plugin
 		refreshIdentity();
 		enqueueSkillsSnapshot();
 		enqueueQuestSnapshot();
+		enqueueDiariesSnapshot();
 		enqueueCombatAchievements();
 		enqueueCollectionLog();
+	}
+
+	@Subscribe
+	public void onScriptPreFired(ScriptPreFired event)
+	{
+		if (event.getScriptId() != CLOG_SEARCH_DRAW_SCRIPT)
+		{
+			return;
+		}
+		Object[] args = event.getScriptEvent() != null ? event.getScriptEvent().getArguments() : null;
+		if (args == null || args.length < 2 || !(args[1] instanceof Integer))
+		{
+			return;
+		}
+		clogObtainedBurst.add((Integer) args[1]);
+		clogScriptFiredTick = client.getTickCount();
+	}
+
+	// Diary completion varbits (plus Karamja's task counters) that should
+	// trigger a re-sync when they change.
+	private static final Set<Integer> DIARY_VARBITS = new HashSet<>();
+	static
+	{
+		DIARY_VARBITS.add(VarbitID.ARDOUGNE_DIARY_EASY_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.ARDOUGNE_DIARY_MEDIUM_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.ARDOUGNE_DIARY_HARD_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.ARDOUGNE_DIARY_ELITE_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.DESERT_DIARY_EASY_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.DESERT_DIARY_MEDIUM_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.DESERT_DIARY_HARD_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.DESERT_DIARY_ELITE_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.FALADOR_DIARY_EASY_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.FALADOR_DIARY_MEDIUM_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.FALADOR_DIARY_HARD_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.FALADOR_DIARY_ELITE_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.FREMENNIK_DIARY_EASY_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.FREMENNIK_DIARY_MEDIUM_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.FREMENNIK_DIARY_HARD_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.FREMENNIK_DIARY_ELITE_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.KANDARIN_DIARY_EASY_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.KANDARIN_DIARY_MEDIUM_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.KANDARIN_DIARY_HARD_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.KANDARIN_DIARY_ELITE_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.KARAMJA_EASY_COUNT);
+		DIARY_VARBITS.add(VarbitID.KARAMJA_MED_COUNT);
+		DIARY_VARBITS.add(VarbitID.KARAMJA_HARD_COUNT);
+		DIARY_VARBITS.add(VarbitID.KARAMJA_DIARY_ELITE_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.KOUREND_DIARY_EASY_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.KOUREND_DIARY_MEDIUM_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.KOUREND_DIARY_HARD_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.KOUREND_DIARY_ELITE_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.LUMBRIDGE_DIARY_EASY_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.LUMBRIDGE_DIARY_MEDIUM_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.LUMBRIDGE_DIARY_HARD_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.LUMBRIDGE_DIARY_ELITE_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.MORYTANIA_DIARY_EASY_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.MORYTANIA_DIARY_MEDIUM_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.MORYTANIA_DIARY_HARD_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.MORYTANIA_DIARY_ELITE_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.VARROCK_DIARY_EASY_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.VARROCK_DIARY_MEDIUM_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.VARROCK_DIARY_HARD_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.VARROCK_DIARY_ELITE_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.WESTERN_DIARY_EASY_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.WESTERN_DIARY_MEDIUM_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.WESTERN_DIARY_HARD_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.WESTERN_DIARY_ELITE_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.WILDERNESS_DIARY_EASY_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.WILDERNESS_DIARY_MEDIUM_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.WILDERNESS_DIARY_HARD_COMPLETE);
+		DIARY_VARBITS.add(VarbitID.WILDERNESS_DIARY_ELITE_COMPLETE);
 	}
 
 	@Subscribe
 	public void onVarbitChanged(VarbitChanged event)
 	{
 		// Live updates: a completed CA task changes CA_POINTS; a new unique
-		// collection log slot changes COLLECTION_COUNT. Both are rare events.
+		// collection log slot changes COLLECTION_COUNT; finishing a diary
+		// task flips its completion varbit. All are rare events.
 		if (event.getVarbitId() == VarbitID.CA_POINTS)
 		{
 			enqueueCombatAchievements();
@@ -184,6 +293,10 @@ public class SidekickSyncPlugin extends Plugin
 		else if (event.getVarpId() == VarPlayerID.COLLECTION_COUNT)
 		{
 			enqueueCollectionLog();
+		}
+		else if (DIARY_VARBITS.contains(event.getVarbitId()))
+		{
+			enqueueDiariesSnapshot();
 		}
 	}
 
@@ -410,6 +523,133 @@ public class SidekickSyncPlugin extends Plugin
 		JsonObject payload = new JsonObject();
 		payload.add("quests", quests);
 		enqueue("QUESTS", payload);
+	}
+
+	/** Must run on the client thread. */
+	private void enqueueDiariesSnapshot()
+	{
+		if (client.getGameState() != GameState.LOGGED_IN)
+		{
+			return;
+		}
+		com.google.gson.JsonArray diaries = new com.google.gson.JsonArray();
+		addDiaryArea(diaries, "Ardougne", VarbitID.ARDOUGNE_DIARY_EASY_COMPLETE, VarbitID.ARDOUGNE_DIARY_MEDIUM_COMPLETE, VarbitID.ARDOUGNE_DIARY_HARD_COMPLETE, VarbitID.ARDOUGNE_DIARY_ELITE_COMPLETE);
+		addDiaryArea(diaries, "Desert", VarbitID.DESERT_DIARY_EASY_COMPLETE, VarbitID.DESERT_DIARY_MEDIUM_COMPLETE, VarbitID.DESERT_DIARY_HARD_COMPLETE, VarbitID.DESERT_DIARY_ELITE_COMPLETE);
+		addDiaryArea(diaries, "Falador", VarbitID.FALADOR_DIARY_EASY_COMPLETE, VarbitID.FALADOR_DIARY_MEDIUM_COMPLETE, VarbitID.FALADOR_DIARY_HARD_COMPLETE, VarbitID.FALADOR_DIARY_ELITE_COMPLETE);
+		addDiaryArea(diaries, "Fremennik", VarbitID.FREMENNIK_DIARY_EASY_COMPLETE, VarbitID.FREMENNIK_DIARY_MEDIUM_COMPLETE, VarbitID.FREMENNIK_DIARY_HARD_COMPLETE, VarbitID.FREMENNIK_DIARY_ELITE_COMPLETE);
+		addDiaryArea(diaries, "Kandarin", VarbitID.KANDARIN_DIARY_EASY_COMPLETE, VarbitID.KANDARIN_DIARY_MEDIUM_COMPLETE, VarbitID.KANDARIN_DIARY_HARD_COMPLETE, VarbitID.KANDARIN_DIARY_ELITE_COMPLETE);
+		// Karamja predates the per-tier varbits: easy/medium/hard only expose
+		// completed-task counters.
+		addDiaryEntry(diaries, "Karamja", "EASY", client.getVarbitValue(VarbitID.KARAMJA_EASY_COUNT) >= KARAMJA_EASY_TASKS);
+		addDiaryEntry(diaries, "Karamja", "MEDIUM", client.getVarbitValue(VarbitID.KARAMJA_MED_COUNT) >= KARAMJA_MEDIUM_TASKS);
+		addDiaryEntry(diaries, "Karamja", "HARD", client.getVarbitValue(VarbitID.KARAMJA_HARD_COUNT) >= KARAMJA_HARD_TASKS);
+		addDiaryEntry(diaries, "Karamja", "ELITE", client.getVarbitValue(VarbitID.KARAMJA_DIARY_ELITE_COMPLETE) == 1);
+		addDiaryArea(diaries, "Kourend & Kebos", VarbitID.KOUREND_DIARY_EASY_COMPLETE, VarbitID.KOUREND_DIARY_MEDIUM_COMPLETE, VarbitID.KOUREND_DIARY_HARD_COMPLETE, VarbitID.KOUREND_DIARY_ELITE_COMPLETE);
+		addDiaryArea(diaries, "Lumbridge & Draynor", VarbitID.LUMBRIDGE_DIARY_EASY_COMPLETE, VarbitID.LUMBRIDGE_DIARY_MEDIUM_COMPLETE, VarbitID.LUMBRIDGE_DIARY_HARD_COMPLETE, VarbitID.LUMBRIDGE_DIARY_ELITE_COMPLETE);
+		addDiaryArea(diaries, "Morytania", VarbitID.MORYTANIA_DIARY_EASY_COMPLETE, VarbitID.MORYTANIA_DIARY_MEDIUM_COMPLETE, VarbitID.MORYTANIA_DIARY_HARD_COMPLETE, VarbitID.MORYTANIA_DIARY_ELITE_COMPLETE);
+		addDiaryArea(diaries, "Varrock", VarbitID.VARROCK_DIARY_EASY_COMPLETE, VarbitID.VARROCK_DIARY_MEDIUM_COMPLETE, VarbitID.VARROCK_DIARY_HARD_COMPLETE, VarbitID.VARROCK_DIARY_ELITE_COMPLETE);
+		addDiaryArea(diaries, "Western Provinces", VarbitID.WESTERN_DIARY_EASY_COMPLETE, VarbitID.WESTERN_DIARY_MEDIUM_COMPLETE, VarbitID.WESTERN_DIARY_HARD_COMPLETE, VarbitID.WESTERN_DIARY_ELITE_COMPLETE);
+		addDiaryArea(diaries, "Wilderness", VarbitID.WILDERNESS_DIARY_EASY_COMPLETE, VarbitID.WILDERNESS_DIARY_MEDIUM_COMPLETE, VarbitID.WILDERNESS_DIARY_HARD_COMPLETE, VarbitID.WILDERNESS_DIARY_ELITE_COMPLETE);
+
+		JsonObject payload = new JsonObject();
+		payload.add("diaries", diaries);
+		enqueue("DIARIES", payload);
+	}
+
+	/** Must run on the client thread. */
+	private void addDiaryArea(com.google.gson.JsonArray out, String area, int easyVarbit, int mediumVarbit, int hardVarbit, int eliteVarbit)
+	{
+		addDiaryEntry(out, area, "EASY", client.getVarbitValue(easyVarbit) == 1);
+		addDiaryEntry(out, area, "MEDIUM", client.getVarbitValue(mediumVarbit) == 1);
+		addDiaryEntry(out, area, "HARD", client.getVarbitValue(hardVarbit) == 1);
+		addDiaryEntry(out, area, "ELITE", client.getVarbitValue(eliteVarbit) == 1);
+	}
+
+	private void addDiaryEntry(com.google.gson.JsonArray out, String area, String tier, boolean completed)
+	{
+		JsonObject entry = new JsonObject();
+		entry.addProperty("area", area);
+		entry.addProperty("tier", tier);
+		entry.addProperty("completed", completed);
+		out.add(entry);
+	}
+
+	/**
+	 * Must run on the client thread. Flushes the obtained-item ids gathered
+	 * from the collection log search draw script, together with the full slot
+	 * universe walked from the game cache.
+	 */
+	private void enqueueCollectionLogItems()
+	{
+		Set<Integer> obtained = new HashSet<>(clogObtainedBurst);
+		clogObtainedBurst.clear();
+		if (obtained.isEmpty())
+		{
+			return;
+		}
+
+		try
+		{
+			Set<Integer> universe = new LinkedHashSet<>();
+			for (int tabStructId : client.getEnum(CLOG_TOP_LEVEL_TABS_ENUM).getIntVals())
+			{
+				int subtabsEnumId = client.getStructComposition(tabStructId).getIntValue(CLOG_SUBTABS_PARAM);
+				for (int pageStructId : client.getEnum(subtabsEnumId).getIntVals())
+				{
+					int itemsEnumId = client.getStructComposition(pageStructId).getIntValue(CLOG_PAGE_ITEMS_PARAM);
+					for (int itemId : client.getEnum(itemsEnumId).getIntVals())
+					{
+						universe.add(itemId);
+					}
+				}
+			}
+
+			// A few items have replacement ids (satchels, flamtaer bag);
+			// translate both the universe and the obtained set.
+			EnumComposition replacements = client.getEnum(CLOG_ITEM_REPLACEMENTS_ENUM);
+			int[] badIds = replacements.getKeys();
+			int[] goodIds = replacements.getIntVals();
+			for (int i = 0; i < badIds.length && i < goodIds.length; i++)
+			{
+				if (universe.remove(badIds[i]))
+				{
+					universe.add(goodIds[i]);
+				}
+				if (obtained.remove(badIds[i]))
+				{
+					obtained.add(goodIds[i]);
+				}
+			}
+
+			if (universe.isEmpty())
+			{
+				return;
+			}
+			com.google.gson.JsonArray universeArr = new com.google.gson.JsonArray();
+			for (int id : universe)
+			{
+				universeArr.add(id);
+			}
+			com.google.gson.JsonArray obtainedArr = new com.google.gson.JsonArray();
+			for (int id : obtained)
+			{
+				if (universe.contains(id))
+				{
+					obtainedArr.add(id);
+				}
+			}
+
+			JsonObject payload = new JsonObject();
+			payload.add("obtained", obtainedArr);
+			payload.add("universe", universeArr);
+			enqueue("COLLECTION_LOG_ITEMS", payload);
+			log.debug("collection log items captured: {} obtained of {}", obtainedArr.size(), universeArr.size());
+		}
+		catch (RuntimeException e)
+		{
+			// Cache layout changed — skip rather than send garbage.
+			log.debug("collection log cache walk failed", e);
+		}
 	}
 
 	/** Must run on the client thread. */

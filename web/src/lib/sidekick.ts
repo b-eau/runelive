@@ -22,7 +22,7 @@ export function llmEnabled(): boolean {
 
 /** Compact account summary injected up-front so common questions need no tool call. */
 export async function buildContext(profileId: string): Promise<string> {
-  const [profile, skills, goals, quests, diaries, bank, topKc, combatAch, clog] = await Promise.all([
+  const [profile, skills, goals, quests, diaries, bank, topKc, combatAch, clog, clogSlots] = await Promise.all([
     db.profile.findUnique({ where: { id: profileId }, include: { account: true } }),
     db.skillState.findMany({ where: { profileId } }),
     db.goal.findMany({ where: { profileId, status: "ACTIVE" } }),
@@ -32,6 +32,7 @@ export async function buildContext(profileId: string): Promise<string> {
     db.killCountState.findMany({ where: { profileId }, orderBy: { kc: "desc" }, take: 8 }),
     db.combatAchievementState.findUnique({ where: { profileId } }),
     db.collectionLogState.findUnique({ where: { profileId } }),
+    db.collectionLogSlot.count({ where: { profileId } }),
   ]);
   if (!profile) return "";
 
@@ -75,7 +76,9 @@ export async function buildContext(profileId: string): Promise<string> {
   const caLine = combatAch
     ? `Combat Achievements: ${combatAch.points} points; tiers complete: ${caTiers.length ? caTiers.map(titleCase).reverse().join(", ") : "none"}.`
     : "";
-  const clogLine = clog ? `Collection log: ${clog.obtained}/${clog.total} uniques obtained.` : "";
+  const clogLine = clog
+    ? `Collection log: ${clog.obtained}/${clog.total} uniques obtained.${clogSlots > 0 ? " Item-level slots are synced — use search_collection_log for specific items." : ""}`
+    : "";
 
   return [
     `Player: ${profile.account.displayName} — ${profile.kind} profile, account type ${profile.accountType}, combat level ${profile.combatLevel ?? "unknown"}.`,
@@ -248,7 +251,7 @@ export function buildTools(profileId: string) {
   const viewCollectionLog = betaTool({
     name: "view_collection_log",
     description:
-      "Read the player's collection log progress: unique slots obtained overall and per section (bosses, raids, clues, minigames, other). Individual item slots are not tracked — only counts.",
+      "Read the player's collection log progress: unique slots obtained overall and per section (bosses, raids, clues, minigames, other). For specific items use search_collection_log.",
     inputSchema: { type: "object", properties: {}, required: [] },
     run: async () => {
       const clog = await db.collectionLogState.findUnique({ where: { profileId } });
@@ -258,6 +261,42 @@ export function buildTools(profileId: string) {
         ([name, c]) => `${titleCase(name)}: ${c.obtained}/${c.total}`,
       );
       return [`Overall uniques: ${clog.obtained}/${clog.total}`, ...lines].join("\n");
+    },
+  });
+
+  const searchCollectionLog = betaTool({
+    name: "search_collection_log",
+    description:
+      "Check specific collection log items by name substring: whether each matching slot has been obtained. Use when the player asks if they own or have 'greenlogged' a drop, pet, or unique.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Item name substring, e.g. 'visage' or 'pet'" },
+      },
+      required: ["query"],
+    },
+    run: async (input) => {
+      const { query } = input as { query: string };
+      const slotCount = await db.collectionLogSlot.count({ where: { profileId } });
+      if (slotCount === 0) {
+        return "No item-level collection log data synced yet — the player needs to open their collection log and use its search once in-game.";
+      }
+      const items = await db.itemPrice.findMany({
+        where: { name: { contains: query.trim(), mode: "insensitive" } },
+        select: { itemId: true, name: true },
+        take: 100,
+      });
+      if (items.length === 0) return `No items matching "${query}" in the catalog.`;
+      const slots = await db.collectionLogSlot.findMany({
+        where: { profileId, itemId: { in: items.map((i) => i.itemId) } },
+      });
+      const byId = new Map(slots.map((s) => [s.itemId, s.obtained]));
+      const lines = items
+        .filter((i) => byId.has(i.itemId))
+        .map((i) => `${i.name} — ${byId.get(i.itemId) ? "OBTAINED" : "not obtained"}`);
+      return lines.length > 0
+        ? lines.slice(0, 40).join("\n")
+        : `No collection log slots match "${query}".`;
     },
   });
 
@@ -330,6 +369,7 @@ export function buildTools(profileId: string) {
     xpGains,
     viewCombatAchievements,
     viewCollectionLog,
+    searchCollectionLog,
     skillTarget,
     lookupItem,
   ];

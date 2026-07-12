@@ -204,6 +204,7 @@ async function main() {
   await db.conversation.deleteMany();
   await db.combatAchievementState.deleteMany();
   await db.collectionLogState.deleteMany();
+  await db.collectionLogSlot.deleteMany();
   await db.goal.deleteMany();
   await db.kcSample.deleteMany();
   await db.killCountState.deleteMany();

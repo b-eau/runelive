@@ -25,6 +25,7 @@ export type CollectionLogPayload = {
   total: number;
   sections?: Record<string, { obtained: number; total: number }>;
 };
+export type CollectionLogItemsPayload = { obtained: number[]; universe: number[] };
 
 /** UTC midnight for the rollup grain. */
 export function dayOf(d: Date): Date {
@@ -198,6 +199,21 @@ export async function materializeEvent(profileId: string, event: IngestEvent): P
         where: { profileId },
         update: data,
         create: { profileId, ...data },
+      });
+      break;
+    }
+
+    case "COLLECTION_LOG_ITEMS": {
+      const { obtained, universe } = event.payload as CollectionLogItemsPayload;
+      if (!Array.isArray(universe) || universe.length === 0) break;
+      const obtainedSet = new Set(Array.isArray(obtained) ? obtained : []);
+      // Full replace: each sync carries the complete slot universe.
+      await db.collectionLogSlot.deleteMany({ where: { profileId } });
+      await db.collectionLogSlot.createMany({
+        data: universe
+          .filter((id) => Number.isInteger(id))
+          .map((itemId) => ({ profileId, itemId, obtained: obtainedSet.has(itemId), updatedAt: occurredAt })),
+        skipDuplicates: true,
       });
       break;
     }

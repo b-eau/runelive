@@ -98,6 +98,7 @@ model Profile {
   chatMessages       ChatMessage[]
   combatAchievements CombatAchievementState?
   collectionLog      CollectionLogState?
+  collectionLogSlots CollectionLogSlot[]
 
   @@unique([accountId, kind])
 }
@@ -293,6 +294,23 @@ model CollectionLogState {
   updatedAt DateTime
 
   profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+// Individual collection log slots. Synced when the player opens their
+// collection log search in-game (the draw script reports obtained items;
+// the slot universe comes from the game cache). Unobtained slots get
+// obtained=false rows so "not obtained" is queryable. Names come from the
+// ItemPrice catalog at read time.
+model CollectionLogSlot {
+  profileId String
+  itemId    Int
+  obtained  Boolean
+  updatedAt DateTime
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@id([profileId, itemId])
+  @@index([profileId, obtained])
 }
 
 // A chat thread. Users can run several in parallel and revisit old ones;

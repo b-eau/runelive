@@ -82,6 +82,69 @@ describe("COLLECTION_LOG materialization", () => {
   });
 });
 
+describe("COLLECTION_LOG_ITEMS materialization + search tool", () => {
+  it("stores the slot universe with obtained flags and replaces on re-sync", async () => {
+    const profileId = await createTestProfile();
+    await materializeEvent(profileId, {
+      type: "COLLECTION_LOG_ITEMS",
+      occurredAt: "2026-07-12T12:00:00Z",
+      payload: { obtained: [20997], universe: [20997, 13652, 11785] },
+    });
+
+    expect(await db.collectionLogSlot.count({ where: { profileId } })).toBe(3);
+    const tbow = await db.collectionLogSlot.findUnique({
+      where: { profileId_itemId: { profileId, itemId: 20997 } },
+    });
+    expect(tbow?.obtained).toBe(true);
+    const claws = await db.collectionLogSlot.findUnique({
+      where: { profileId_itemId: { profileId, itemId: 13652 } },
+    });
+    expect(claws?.obtained).toBe(false);
+
+    // Re-sync with more obtained replaces the old rows.
+    await materializeEvent(profileId, {
+      type: "COLLECTION_LOG_ITEMS",
+      occurredAt: "2026-07-12T13:00:00Z",
+      payload: { obtained: [20997, 13652], universe: [20997, 13652, 11785] },
+    });
+    const clawsAfter = await db.collectionLogSlot.findUnique({
+      where: { profileId_itemId: { profileId, itemId: 13652 } },
+    });
+    expect(clawsAfter?.obtained).toBe(true);
+  });
+
+  it("search_collection_log resolves names via the item catalog", async () => {
+    const profileId = await createTestProfile();
+    await db.itemPrice.createMany({
+      data: [
+        { itemId: 20997, name: "Twisted bow", price: 1_490_000_000 },
+        { itemId: 13652, name: "Dragon claws", price: 80_000_000 },
+      ],
+      skipDuplicates: true,
+    });
+    await materializeEvent(profileId, {
+      type: "COLLECTION_LOG_ITEMS",
+      occurredAt: "2026-07-12T12:00:00Z",
+      payload: { obtained: [20997], universe: [20997, 13652] },
+    });
+
+    const { buildTools } = await import("@/lib/sidekick");
+    const tool = buildTools(profileId).find((t) => t.name === "search_collection_log")!;
+    const bow = String(await tool.run({ query: "twisted bow" } as never));
+    expect(bow).toContain("Twisted bow — OBTAINED");
+    const claws = String(await tool.run({ query: "dragon claws" } as never));
+    expect(claws).toContain("Dragon claws — not obtained");
+  });
+
+  it("search_collection_log explains when nothing is synced", async () => {
+    const profileId = await createTestProfile();
+    const { buildTools } = await import("@/lib/sidekick");
+    const tool = buildTools(profileId).find((t) => t.name === "search_collection_log")!;
+    const result = String(await tool.run({ query: "pet" } as never));
+    expect(result).toContain("No item-level collection log data synced yet");
+  });
+});
+
 describe("buildContext achievement lines", () => {
   it("summarizes CA tiers and collection log counts", async () => {
     const profileId = await createTestProfile();
