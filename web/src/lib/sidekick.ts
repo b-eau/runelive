@@ -22,7 +22,7 @@ export function llmEnabled(): boolean {
 
 /** Compact account summary injected up-front so common questions need no tool call. */
 export async function buildContext(profileId: string): Promise<string> {
-  const [profile, skills, goals, quests, diaries, bank, topKc] = await Promise.all([
+  const [profile, skills, goals, quests, diaries, bank, topKc, combatAch, clog] = await Promise.all([
     db.profile.findUnique({ where: { id: profileId }, include: { account: true } }),
     db.skillState.findMany({ where: { profileId } }),
     db.goal.findMany({ where: { profileId, status: "ACTIVE" } }),
@@ -30,6 +30,8 @@ export async function buildContext(profileId: string): Promise<string> {
     db.diaryState.findMany({ where: { profileId } }),
     db.containerState.findUnique({ where: { profileId_container: { profileId, container: "BANK" } } }),
     db.killCountState.findMany({ where: { profileId }, orderBy: { kc: "desc" }, take: 8 }),
+    db.combatAchievementState.findUnique({ where: { profileId } }),
+    db.collectionLogState.findUnique({ where: { profileId } }),
   ]);
   if (!profile) return "";
 
@@ -67,12 +69,22 @@ export async function buildContext(profileId: string): Promise<string> {
         ? "Achievement diaries: none complete yet."
         : `Achievement diaries complete: ${[...diaryByArea.entries()].map(([area, tiers]) => `${area} (${tiers.join("/")})`).join(", ")}.`;
 
+  const caTiers = combatAch
+    ? (["grandmaster", "master", "elite", "hard", "medium", "easy"] as const).filter((t) => combatAch[t])
+    : [];
+  const caLine = combatAch
+    ? `Combat Achievements: ${combatAch.points} points; tiers complete: ${caTiers.length ? caTiers.map(titleCase).reverse().join(", ") : "none"}.`
+    : "";
+  const clogLine = clog ? `Collection log: ${clog.obtained}/${clog.total} uniques obtained.` : "";
+
   return [
     `Player: ${profile.account.displayName} — ${profile.kind} profile, account type ${profile.accountType}, combat level ${profile.combatLevel ?? "unknown"}.`,
     overall ? `Total level ${overall.level}, total XP ${formatXp(overall.xp)}.` : "",
     `Skills: ${skillLines}.`,
     questLine,
     diaryLine,
+    caLine,
+    clogLine,
     bank ? `Bank value ≈ ${formatGp(bank.value)} gp.` : "Bank not synced yet.",
     topKc.length ? `Top boss KC: ${topKc.map((k) => `${titleCase(k.boss)} ${k.kc}`).join(", ")}.` : "",
     goals.length
@@ -214,6 +226,41 @@ export function buildTools(profileId: string) {
     },
   });
 
+  const viewCombatAchievements = betaTool({
+    name: "view_combat_achievements",
+    description:
+      "Read the player's combat achievement progress: points, which tiers are complete, and points remaining to each incomplete tier.",
+    inputSchema: { type: "object", properties: {}, required: [] },
+    run: async () => {
+      const ca = await db.combatAchievementState.findUnique({ where: { profileId } });
+      if (!ca) return "No combat achievement data synced yet.";
+      const thresholds = JSON.parse(ca.thresholds) as Record<string, number>;
+      const tiers = ["EASY", "MEDIUM", "HARD", "ELITE", "MASTER", "GRANDMASTER"] as const;
+      const lines = tiers.map((tier) => {
+        const t = thresholds[tier] ?? 0;
+        const complete = ca[tier.toLowerCase() as Lowercase<typeof tier>];
+        return `${titleCase(tier.toLowerCase())} (${t} pts): ${complete ? "COMPLETE" : t > 0 ? `${t - ca.points} points to go` : "unknown"}`;
+      });
+      return [`Total points: ${ca.points}`, ...lines].join("\n");
+    },
+  });
+
+  const viewCollectionLog = betaTool({
+    name: "view_collection_log",
+    description:
+      "Read the player's collection log progress: unique slots obtained overall and per section (bosses, raids, clues, minigames, other). Individual item slots are not tracked — only counts.",
+    inputSchema: { type: "object", properties: {}, required: [] },
+    run: async () => {
+      const clog = await db.collectionLogState.findUnique({ where: { profileId } });
+      if (!clog) return "No collection log data synced yet.";
+      const sections = JSON.parse(clog.sections) as Record<string, { obtained: number; total: number }>;
+      const lines = Object.entries(sections).map(
+        ([name, c]) => `${titleCase(name)}: ${c.obtained}/${c.total}`,
+      );
+      return [`Overall uniques: ${clog.obtained}/${clog.total}`, ...lines].join("\n");
+    },
+  });
+
   const skillTarget = betaTool({
     name: "calc_skill_target",
     description:
@@ -275,7 +322,17 @@ export function buildTools(profileId: string) {
     },
   });
 
-  return [searchBank, viewQuestLog, viewDiaries, viewKc, xpGains, skillTarget, lookupItem];
+  return [
+    searchBank,
+    viewQuestLog,
+    viewDiaries,
+    viewKc,
+    xpGains,
+    viewCombatAchievements,
+    viewCollectionLog,
+    skillTarget,
+    lookupItem,
+  ];
 }
 
 export function systemPrompt(context: string): string {

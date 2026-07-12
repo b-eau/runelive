@@ -19,6 +19,12 @@ export type QuestsPayload = { quests: { name: string; state: string }[] };
 export type DiariesPayload = { diaries: { area: string; tier: string; completed: boolean }[] };
 export type ContainerPayload = { items: { id: number; qty: number; name?: string }[] };
 export type KillCountPayload = { boss: string; kc: number };
+export type CombatAchievementsPayload = { points: number; thresholds: Record<string, number> };
+export type CollectionLogPayload = {
+  obtained: number;
+  total: number;
+  sections?: Record<string, { obtained: number; total: number }>;
+};
 
 /** UTC midnight for the rollup grain. */
 export function dayOf(d: Date): Date {
@@ -148,6 +154,50 @@ export async function materializeEvent(profileId: string, event: IngestEvent): P
         where: { profileId_boss_date: { profileId, boss, date: day } },
         update: { kc },
         create: { profileId, boss, date: day, kc },
+      });
+      break;
+    }
+
+    case "COMBAT_ACHIEVEMENTS": {
+      const { points, thresholds } = event.payload as CombatAchievementsPayload;
+      // A tier is complete once points reach its threshold; a threshold of 0
+      // means the client hadn't loaded it, so never mark that tier done.
+      const done = (tier: string) => {
+        const t = thresholds?.[tier] ?? 0;
+        return t > 0 && points >= t;
+      };
+      const tiers = {
+        points,
+        thresholds: JSON.stringify(thresholds ?? {}),
+        easy: done("EASY"),
+        medium: done("MEDIUM"),
+        hard: done("HARD"),
+        elite: done("ELITE"),
+        master: done("MASTER"),
+        grandmaster: done("GRANDMASTER"),
+        updatedAt: occurredAt,
+      };
+      await db.combatAchievementState.upsert({
+        where: { profileId },
+        update: tiers,
+        create: { profileId, ...tiers },
+      });
+      break;
+    }
+
+    case "COLLECTION_LOG": {
+      const { obtained, total, sections } = event.payload as CollectionLogPayload;
+      if (!(total > 0)) break; // unsynced counts — keep whatever we have
+      const data = {
+        obtained: Math.max(0, obtained),
+        total,
+        sections: JSON.stringify(sections ?? {}),
+        updatedAt: occurredAt,
+      };
+      await db.collectionLogState.upsert({
+        where: { profileId },
+        update: data,
+        create: { profileId, ...data },
       });
       break;
     }

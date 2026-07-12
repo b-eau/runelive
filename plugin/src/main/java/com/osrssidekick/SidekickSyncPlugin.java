@@ -32,7 +32,9 @@ import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.StatChanged;
+import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.InventoryID;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
@@ -166,6 +168,23 @@ public class SidekickSyncPlugin extends Plugin
 		refreshIdentity();
 		enqueueSkillsSnapshot();
 		enqueueQuestSnapshot();
+		enqueueCombatAchievements();
+		enqueueCollectionLog();
+	}
+
+	@Subscribe
+	public void onVarbitChanged(VarbitChanged event)
+	{
+		// Live updates: a completed CA task changes CA_POINTS; a new unique
+		// collection log slot changes COLLECTION_COUNT. Both are rare events.
+		if (event.getVarbitId() == VarbitID.CA_POINTS)
+		{
+			enqueueCombatAchievements();
+		}
+		else if (event.getVarpId() == VarPlayerID.COLLECTION_COUNT)
+		{
+			enqueueCollectionLog();
+		}
 	}
 
 	@Subscribe
@@ -391,6 +410,63 @@ public class SidekickSyncPlugin extends Plugin
 		JsonObject payload = new JsonObject();
 		payload.add("quests", quests);
 		enqueue("QUESTS", payload);
+	}
+
+	/** Must run on the client thread. */
+	private void enqueueCombatAchievements()
+	{
+		if (client.getGameState() != GameState.LOGGED_IN)
+		{
+			return;
+		}
+		int points = client.getVarbitValue(VarbitID.CA_POINTS);
+		JsonObject thresholds = new JsonObject();
+		thresholds.addProperty("EASY", client.getVarbitValue(VarbitID.CA_THRESHOLD_EASY));
+		thresholds.addProperty("MEDIUM", client.getVarbitValue(VarbitID.CA_THRESHOLD_MEDIUM));
+		thresholds.addProperty("HARD", client.getVarbitValue(VarbitID.CA_THRESHOLD_HARD));
+		thresholds.addProperty("ELITE", client.getVarbitValue(VarbitID.CA_THRESHOLD_ELITE));
+		thresholds.addProperty("MASTER", client.getVarbitValue(VarbitID.CA_THRESHOLD_MASTER));
+		thresholds.addProperty("GRANDMASTER", client.getVarbitValue(VarbitID.CA_THRESHOLD_GRANDMASTER));
+
+		JsonObject payload = new JsonObject();
+		payload.addProperty("points", points);
+		payload.add("thresholds", thresholds);
+		enqueue("COMBAT_ACHIEVEMENTS", payload);
+	}
+
+	/** Must run on the client thread. */
+	private void enqueueCollectionLog()
+	{
+		if (client.getGameState() != GameState.LOGGED_IN)
+		{
+			return;
+		}
+		int total = client.getVarpValue(VarPlayerID.COLLECTION_COUNT_MAX);
+		if (total <= 0)
+		{
+			return; // counts not populated (server hasn't synced them yet)
+		}
+		JsonObject sections = new JsonObject();
+		sections.add("bosses", sectionCounts(VarPlayerID.COLLECTION_COUNT_BOSSES, VarPlayerID.COLLECTION_COUNT_BOSSES_MAX));
+		sections.add("raids", sectionCounts(VarPlayerID.COLLECTION_COUNT_RAIDS, VarPlayerID.COLLECTION_COUNT_RAIDS_MAX));
+		sections.add("clues", sectionCounts(VarPlayerID.COLLECTION_COUNT_CLUES, VarPlayerID.COLLECTION_COUNT_CLUES_MAX));
+		sections.add("minigames", sectionCounts(VarPlayerID.COLLECTION_COUNT_MINIGAMES, VarPlayerID.COLLECTION_COUNT_MINIGAMES_MAX));
+		sections.add("other", sectionCounts(VarPlayerID.COLLECTION_COUNT_OTHER, VarPlayerID.COLLECTION_COUNT_OTHER_MAX));
+
+		JsonObject payload = new JsonObject();
+		payload.addProperty("obtained", client.getVarpValue(VarPlayerID.COLLECTION_COUNT));
+		payload.addProperty("total", total);
+		payload.add("sections", sections);
+		enqueue("COLLECTION_LOG", payload);
+	}
+
+	/** Must run on the client thread. */
+	private JsonObject sectionCounts(int obtainedVarp, int totalVarp)
+	{
+		JsonObject counts = new JsonObject();
+		counts.addProperty("obtained", client.getVarpValue(obtainedVarp));
+		counts.addProperty("total", client.getVarpValue(totalVarp));
+		return counts;
 	}
 
 	private void enqueue(String type, JsonObject payload)

@@ -93,9 +93,11 @@ model Profile {
   bankSamples  BankValueSample[]
   killCounts   KillCountState[]
   kcSamples    KcSample[]
-  goals         Goal[]
-  conversations Conversation[]
-  chatMessages  ChatMessage[]
+  goals              Goal[]
+  conversations      Conversation[]
+  chatMessages       ChatMessage[]
+  combatAchievements CombatAchievementState?
+  collectionLog      CollectionLogState?
 
   @@unique([accountId, kind])
 }
@@ -260,6 +262,37 @@ model Goal {
   profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   @@index([profileId, status])
+}
+
+// Combat achievement progress. The plugin syncs points plus the per-tier
+// point thresholds (varbit-backed); tier completion is computed at
+// materialization time. One row per profile.
+model CombatAchievementState {
+  profileId   String   @id
+  points      Int
+  thresholds  String // JSON {"EASY":33,...} — kept for "points to next tier" math
+  easy        Boolean  @default(false)
+  medium      Boolean  @default(false)
+  hard        Boolean  @default(false)
+  elite       Boolean  @default(false)
+  master      Boolean  @default(false)
+  grandmaster Boolean  @default(false)
+  updatedAt   DateTime
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+}
+
+// Collection log unique-slot counts, overall and per section (varp-backed).
+// Per-item obtained state isn't syncable without reflection or interface
+// scraping, so this intentionally stays at summary grain.
+model CollectionLogState {
+  profileId String   @id
+  obtained  Int
+  total     Int
+  sections  String // JSON {"bosses":{"obtained":n,"total":n},...}
+  updatedAt DateTime
+
+  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 }
 
 // A chat thread. Users can run several in parallel and revisit old ones;
