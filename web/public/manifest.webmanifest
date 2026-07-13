@@ -1,12 +1,24 @@
 {
+  "id": "/dashboard",
   "name": "OSRS Sidekick",
   "short_name": "Sidekick",
-  "description": "Your Old School RuneScape companion — live stats, trends, and an AI guide.",
+  "description": "Your Old School RuneScape companion — live stats, trends, and an AI guide that knows your account.",
   "start_url": "/dashboard",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
   "background_color": "#0d0d0d",
   "theme_color": "#0d0d0d",
+  "categories": ["games", "productivity", "utilities"],
   "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
     { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Ask Sidekick", "short_name": "Chat", "url": "/dashboard", "description": "Open your AI companion" },
+    { "name": "Dashboard", "short_name": "Dashboard", "url": "/dashboard" }
   ]
 }

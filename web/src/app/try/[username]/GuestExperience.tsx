@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import AssistantMessage from "@/components/AssistantMessage";
 import { SKILL_EMOJI } from "@/components/skillEmoji";
+import type { ProposedGoal } from "@/lib/suggest";
 
 type GuestSkill = { skill: string; xp: number; level: number; rank?: number };
 type Snapshot = {
@@ -78,6 +79,7 @@ export default function GuestExperience({ username }: { username: string }) {
   const [error, setError] = useState("");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [goals, setGoals] = useState<ProposedGoal[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,6 +99,7 @@ export default function GuestExperience({ username }: { username: string }) {
         }
         setSnapshot(body.snapshot);
         setSuggestions(body.suggestions ?? []);
+        setGoals(Array.isArray(body.goals) ? body.goals : []);
         setState("ready");
       })
       .catch(() => {
@@ -133,10 +136,18 @@ export default function GuestExperience({ username }: { username: string }) {
     );
   }
 
-  return <GuestDashboard snapshot={snapshot} suggestions={suggestions} />;
+  return <GuestDashboard snapshot={snapshot} suggestions={suggestions} goals={goals} />;
 }
 
-function GuestDashboard({ snapshot, suggestions }: { snapshot: Snapshot; suggestions: string[] }) {
+function GuestDashboard({
+  snapshot,
+  suggestions,
+  goals,
+}: {
+  snapshot: Snapshot;
+  suggestions: string[];
+  goals: ProposedGoal[];
+}) {
   const nearLevel = snapshot.skills
     .filter((s) => s.level < 99)
     .map((s) => ({ ...s, progress: progressWithinLevel(s), toNext: XP_TABLE[s.level + 1] - s.xp }))
@@ -279,6 +290,32 @@ function GuestDashboard({ snapshot, suggestions }: { snapshot: Snapshot; suggest
           })}
         </div>
       </div>
+
+      {goals.length > 0 && (
+        <div className="card">
+          <div className="goal-proposals-head" style={{ marginBottom: 12 }}>
+            ✨ Goals Sidekick would set for {snapshot.displayName}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {goals.map((g) => (
+              <div key={g.title} className="goal-proposal">
+                <span aria-hidden style={{ marginRight: 2 }}>
+                  🎯
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 650, fontSize: 13.5 }}>{g.title}</div>
+                  {g.rationale && (
+                    <div style={{ fontSize: 12, color: "var(--ink-3)", marginTop: 2 }}>{g.rationale}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="sub" style={{ margin: "12px 0 0" }}>
+            Sign up to track these — Sidekick steers every tip toward the goals you keep.
+          </p>
+        </div>
+      )}
 
       <div className="card" style={{ textAlign: "center", padding: 28 }}>
         <h3 style={{ fontSize: 17 }}>This is just your public hiscores.</h3>

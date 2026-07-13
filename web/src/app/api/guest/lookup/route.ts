@@ -3,7 +3,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { lookupPlayer, normalizeUsername, PlayerNotFoundError } from "@/lib/lookup";
-import { suggestQueries } from "@/lib/guest";
+import { proposeGuestGoals, suggestQueries } from "@/lib/guest";
 import { clientIp, rateLimit } from "@/lib/ratelimit";
 
 export const maxDuration = 30;
@@ -23,8 +23,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const snapshot = await lookupPlayer(username);
-    const suggestions = await suggestQueries(snapshot);
-    return NextResponse.json({ snapshot, suggestions });
+    const [suggestions, goals] = await Promise.all([
+      suggestQueries(snapshot),
+      proposeGuestGoals(snapshot),
+    ]);
+    return NextResponse.json({ snapshot, suggestions, goals });
   } catch (e) {
     if (e instanceof PlayerNotFoundError) {
       return NextResponse.json(

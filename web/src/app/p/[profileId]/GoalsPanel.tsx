@@ -1,5 +1,6 @@
 import type { Goal } from "@prisma/client";
 import { addGoal, setGoalStatus } from "./actions";
+import GoalProposals from "./GoalProposals";
 
 export default function GoalsPanel({ profileId, goals }: { profileId: string; goals: Goal[] }) {
   const active = goals.filter((g) => g.status === "ACTIVE");
@@ -53,7 +54,9 @@ export default function GoalsPanel({ profileId, goals }: { profileId: string; go
           </div>
         ))}
       </div>
-      <form action={addGoalForProfile} style={{ display: "flex", gap: 8 }}>
+      <GoalProposals profileId={profileId} show={active.length < 2} />
+
+      <form action={addGoalForProfile} style={{ display: "flex", gap: 8, marginTop: 14 }}>
         <input type="text" name="title" placeholder='e.g. "Quest cape, as AFK as possible"' required />
         <button className="btn" type="submit">
           Add

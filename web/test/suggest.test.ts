@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { createTestProfile } from "./fixtures";
 import {
+  generateGoals,
   peekSuggestions,
+  proposeGoals,
   refreshSuggestions,
   suggestFollowups,
   suggestProfileQueries,
@@ -101,6 +103,26 @@ describe("suggestProfileQueries", () => {
     const peek = await peekSuggestions(profileId, "bosses");
     expect(peek.needsRefresh).toBe(true); // stale -> refresh
     expect(peek.suggestions.length).toBeGreaterThanOrEqual(2); // but still served
+  });
+
+  it("proposeGoals returns [] without an LLM key, and serves cached goals when present", async () => {
+    const profileId = await createTestProfile();
+    // No LLM key in the test env -> generation yields nothing.
+    expect(await generateGoals("Player: tester, 92 Slayer.")).toEqual([]);
+    expect(await proposeGoals(profileId)).toEqual([]);
+
+    // A cached proposal (e.g. written on a prior LLM-enabled request) is served.
+    await db.suggestionCache.create({
+      data: {
+        profileId,
+        context: "goals",
+        payload: JSON.stringify([{ title: "Reach 99 Slayer", rationale: "You're 92, the grind is nearly done." }]),
+        updatedAt: new Date(),
+      },
+    });
+    const goals = await proposeGoals(profileId);
+    expect(goals).toHaveLength(1);
+    expect(goals[0].title).toBe("Reach 99 Slayer");
   });
 
   it("biases heuristics by context and caches each context separately", async () => {

@@ -28,7 +28,7 @@ export default async function ProfileLayout({
   );
 
   return (
-    <>
+    <div className="app-shell">
       <header className="topbar">
         <div className="topbar-inner">
           <Link href="/dashboard" className="brand">
@@ -47,7 +47,7 @@ export default async function ProfileLayout({
           </form>
         </div>
       </header>
-      <main className="shell">
+      <main className="shell shell-profile">
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: 22, flexWrap: "wrap" }}>
           <h1 style={{ fontSize: 26, margin: 0, letterSpacing: "-0.02em" }}>{profile.account.displayName}</h1>
           <span className="pill gold">{PROFILE_KIND_LABELS[profile.kind] ?? profile.kind}</span>
@@ -60,6 +60,6 @@ export default async function ProfileLayout({
         <TabNav profileId={profile.id} />
         {children}
       </main>
-    </>
+    </div>
   );
 }

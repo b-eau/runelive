@@ -45,31 +45,128 @@ const CONTEXT_FOCUS: Record<SuggestContext, string> = {
   bosses: "Focus on PvM: which boss to learn next given their kill counts, gear upgrades for bosses they already do, and kill-count milestones.",
 };
 
-/** Shared LLM call for all suggestion flavors. Returns [] on any failure. */
-async function llmSuggestions(system: string, prompt: string, max: number): Promise<string[]> {
-  if (!llmEnabled()) return [];
+/** Shared structured-output LLM call (Anthropic or Gemini). null on failure. */
+async function llmJson<T>(
+  system: string,
+  prompt: string,
+  schema: Record<string, unknown>,
+  maxTokens = 500,
+): Promise<T | null> {
+  if (!llmEnabled()) return null;
   try {
     if (anthropicEnabled()) {
       const client = new Anthropic();
       const response = await client.messages.create({
         model: "claude-haiku-4-5",
-        max_tokens: 400,
-        output_config: {
-          format: { type: "json_schema", schema: { ...SUGGESTION_SCHEMA, additionalProperties: false } },
-        },
+        max_tokens: maxTokens,
+        output_config: { format: { type: "json_schema", schema } },
         system,
         messages: [{ role: "user", content: prompt }],
       });
       const text = response.content.find((b) => b.type === "text");
-      if (!text || text.type !== "text") return [];
-      return sanitize((JSON.parse(text.text) as { suggestions?: string[] }).suggestions).slice(0, max);
+      if (!text || text.type !== "text") return null;
+      return JSON.parse(text.text) as T;
     }
-    const parsed = await runGeminiJson<{ suggestions?: string[] }>({ system, prompt, schema: SUGGESTION_SCHEMA });
-    return sanitize(parsed.suggestions).slice(0, max);
+    return await runGeminiJson<T>({ system, prompt, schema, maxTokens });
   } catch (e) {
-    console.warn("suggestion generation failed", e);
-    return [];
+    console.warn("llmJson failed", e);
+    return null;
   }
+}
+
+/** Shared LLM call for all suggestion flavors. Returns [] on any failure. */
+async function llmSuggestions(system: string, prompt: string, max: number): Promise<string[]> {
+  const parsed = await llmJson<{ suggestions?: string[] }>(system, prompt, {
+    ...SUGGESTION_SCHEMA,
+    additionalProperties: false,
+  }, 400);
+  return sanitize(parsed?.suggestions).slice(0, max);
+}
+
+// ------------------------------------------------------------------ goals
+
+export type ProposedGoal = { title: string; rationale: string };
+
+const GOAL_SYSTEM = `You propose meaningful, motivating Old School RuneScape account goals for a player based on their synced stats.
+
+Grounding rules — violating any makes a goal worthless:
+- Ground every goal in the player's real data from the context. Respect the account type: ironmen cannot use the Grand Exchange or trade, so never propose GE/bond/buying goals to them.
+- Never propose content the context shows is already done: not a skill already 99, not a quest cape when all quests are complete, not a diary tier already finished.
+- Mix time horizons across the set: one achievable soon, one medium-term, one aspirational — all calibrated to their current levels and progress.
+- Prefer goals the assistant can steer toward and track: skill-level targets, boss kill-count milestones, quest/diary/collection-log completion, or a wealth target.
+
+Each goal has a short imperative title (max 55 chars, e.g. "Reach 99 Slayer") and a one-sentence rationale grounded in their stats (max 120 chars).`;
+
+const GOAL_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    goals: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          title: { type: "string" },
+          rationale: { type: "string" },
+        },
+        required: ["title", "rationale"],
+      },
+    },
+  },
+  required: ["goals"],
+};
+
+function sanitizeGoals(raw: ProposedGoal[] | undefined): ProposedGoal[] {
+  return (raw ?? [])
+    .filter((g) => g && typeof g.title === "string" && g.title.trim().length > 0)
+    .map((g) => ({
+      title: g.title.trim().slice(0, 80),
+      rationale: (typeof g.rationale === "string" ? g.rationale : "").trim().slice(0, 160),
+    }))
+    .slice(0, 3);
+}
+
+/** Generate grounded goal proposals from a prebuilt context string. */
+export async function generateGoals(context: string): Promise<ProposedGoal[]> {
+  const parsed = await llmJson<{ goals?: ProposedGoal[] }>(
+    GOAL_SYSTEM,
+    `Player context:\n${context}\n\nPropose exactly 3 account goals.`,
+    GOAL_SCHEMA,
+    // Generous budget: Gemini's default-on thinking shares this with the
+    // output, so a tight cap truncates the JSON to nothing.
+    2048,
+  );
+  return sanitizeGoals(parsed?.goals);
+}
+
+/**
+ * Proposed goals for an authenticated profile, persisted in the shared cache
+ * so onboarding stays instant and we don't re-spend on every visit. Callers
+ * should only surface these when the profile has few/no goals of its own.
+ */
+export async function proposeGoals(profileId: string): Promise<ProposedGoal[]> {
+  const row = await db.suggestionCache.findUnique({
+    where: { profileId_context: { profileId, context: "goals" } },
+  });
+  if (row) {
+    try {
+      const goals = JSON.parse(row.payload) as ProposedGoal[];
+      if (Array.isArray(goals) && goals.length > 0) return goals;
+    } catch {
+      /* regenerate below */
+    }
+  }
+  const goals = await generateGoals(await buildContext(profileId));
+  if (goals.length > 0) {
+    const payload = JSON.stringify(goals);
+    await db.suggestionCache.upsert({
+      where: { profileId_context: { profileId, context: "goals" } },
+      create: { profileId, context: "goals", payload, updatedAt: new Date() },
+      update: { payload, updatedAt: new Date() },
+    });
+  }
+  return goals;
 }
 
 /** Data-aware fallback that needs no LLM, biased toward the given context. */

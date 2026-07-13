@@ -69,6 +69,7 @@ export default function ChatPanel({
   const [voiceSupported, setVoiceSupported] = useState(true);
   const [interim, setInterim] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const recognizerRef = useRef<SpeechRecognitionLike | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const voiceModeRef = useRef(voiceMode);
@@ -90,6 +91,14 @@ export default function ChatPanel({
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, busy, interim]);
+
+  // Auto-grow the composer textarea with its content (up to the CSS max-height).
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [input]);
 
   const newChat = useCallback(() => {
     setActiveId(null);
@@ -309,7 +318,7 @@ export default function ChatPanel({
   const activeTitle = conversations.find((c) => c.id === activeId)?.title;
 
   return (
-    <div className="card chat-shell" style={{ height: "min(72dvh, 720px)" }}>
+    <div className="chat-shell">
       <aside className={`chat-rail ${railOpen ? "open" : ""}`}>
         <button className="btn primary" style={{ fontSize: 12.5, padding: "8px 10px" }} onClick={newChat}>
           + New chat
@@ -358,6 +367,7 @@ export default function ChatPanel({
             Demo mode: set <code>ANTHROPIC_API_KEY</code> or <code>GEMINI_API_KEY</code> in <code>web/.env</code> to unlock the full assistant.
           </div>
         )}
+        <div className="chat-col">
         <div className="chat-log" ref={logRef}>
           {loadingConversation && (
             <div className="empty" style={{ margin: "auto" }} aria-live="polite">
@@ -432,11 +442,11 @@ export default function ChatPanel({
           </div>
         )}
         <form
+          className="chat-composer"
           onSubmit={(e) => {
             e.preventDefault();
             void send(input);
           }}
-          style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 12 }}
         >
           <button
             type="button"
@@ -456,8 +466,8 @@ export default function ChatPanel({
           </button>
           <button
             type="button"
-            className="btn ghost"
-            style={{ fontSize: 15, padding: "6px 9px", border: "1px solid var(--border)" }}
+            className="btn ghost composer-btn"
+            style={{ border: "1px solid var(--border)" }}
             onClick={() => setShowSuggest((s) => !s)}
             title="Suggested conversation starters"
             aria-label="Show suggested conversation starters"
@@ -465,24 +475,32 @@ export default function ChatPanel({
           >
             ✨
           </button>
-          <input
-            type="text"
+          <textarea
+            ref={inputRef}
+            rows={1}
             placeholder={
               voiceMode === "listening" ? "Listening… speak now" : "Ask your Sidekick anything…"
             }
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void send(input);
+              }
+            }}
             disabled={busy}
           />
-          <button className="btn primary" type="submit" disabled={busy || !input.trim()}>
-            Send
+          <button className="btn primary composer-btn" type="submit" disabled={busy || !input.trim()} aria-label="Send">
+            ↑
           </button>
         </form>
         {!voiceSupported && (
-          <p style={{ fontSize: 11.5, color: "var(--ink-3)", margin: "8px 0 0" }}>
+          <p style={{ fontSize: 11.5, color: "var(--ink-3)", margin: "8px 0 0", textAlign: "center" }}>
             Voice mode needs microphone access and a browser with the Web Speech API (Chrome, Edge, Safari).
           </p>
         )}
+        </div>
       </section>
     </div>
   );

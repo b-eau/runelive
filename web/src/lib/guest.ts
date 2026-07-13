@@ -7,6 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import type { GuestSnapshot } from "./lookup";
 import { runGeminiChat, runGeminiJson } from "./gemini";
 import { anthropicEnabled, llmEnabled } from "./sidekick";
+import { generateGoals, type ProposedGoal } from "./suggest";
 import { formatXp, titleCase, xpForLevel } from "./osrs";
 
 // Deliberately the cheap tier: guest traffic is unauthenticated and the
@@ -107,6 +108,26 @@ function sanitizeSuggestions(raw: string[] | undefined): string[] {
     .filter((s) => typeof s === "string" && s.trim().length > 0)
     .map((s) => s.trim().slice(0, 140))
     .slice(0, 4);
+}
+
+// Guest goal proposals are generated at most ~once per username (in-memory,
+// long TTL) to bound LLM spend on the unauthenticated funnel.
+const GUEST_GOALS_TTL_MS = 24 * 60 * 60 * 1000;
+const guestGoalCache = new Map<string, { goals: ProposedGoal[]; expiresAt: number }>();
+
+export async function proposeGuestGoals(snapshot: GuestSnapshot): Promise<ProposedGoal[]> {
+  if (!llmEnabled()) return [];
+  const key = snapshot.username.toLowerCase();
+  const hit = guestGoalCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) return hit.goals;
+
+  const goals = await generateGoals(buildGuestContext(snapshot));
+  guestGoalCache.set(key, { goals, expiresAt: Date.now() + GUEST_GOALS_TTL_MS });
+  if (guestGoalCache.size > 2000) {
+    const oldest = guestGoalCache.keys().next().value;
+    if (oldest) guestGoalCache.delete(oldest);
+  }
+  return goals;
 }
 
 export async function suggestQueries(snapshot: GuestSnapshot): Promise<string[]> {
