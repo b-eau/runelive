@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { authorizedProfile } from "@/lib/data";
 import { runSidekick } from "@/lib/sidekick";
-import { suggestFollowups } from "@/lib/suggest";
+import { suggestFollowups, summarizeForSpeech } from "@/lib/suggest";
 
 export const maxDuration = 120; // LLM turns with tool use can take a while
 
@@ -10,10 +10,11 @@ const HISTORY_LIMIT = 24;
 const TITLE_LIMIT = 60;
 
 export async function POST(req: NextRequest) {
-  const { profileId, conversationId, message } = (await req.json().catch(() => ({}))) as {
+  const { profileId, conversationId, message, voice } = (await req.json().catch(() => ({}))) as {
     profileId?: string;
     conversationId?: string;
     message?: string;
+    voice?: boolean;
   };
   if (!profileId || !message?.trim()) {
     return NextResponse.json({ error: "profileId and message are required" }, { status: 400 });
@@ -59,14 +60,22 @@ export async function POST(req: NextRequest) {
   try {
     const reply = await runSidekick(profileId, history);
     console.log(`sidekick turn completed in ${Date.now() - startedAt}ms`);
-    const [followups] = await Promise.all([
+    const [followups, spoken] = await Promise.all([
       suggestFollowups(profileId, trimmed, reply),
+      // Voice turns get an abbreviated line optimized for narration.
+      voice ? summarizeForSpeech(trimmed, reply) : Promise.resolve(undefined),
       db.chatMessage.create({
         data: { profileId, conversationId: conversation.id, role: "assistant", content: reply },
       }),
       db.conversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } }),
     ]);
-    return NextResponse.json({ reply, followups, conversationId: conversation.id, title: conversation.title });
+    return NextResponse.json({
+      reply,
+      spoken,
+      followups,
+      conversationId: conversation.id,
+      title: conversation.title,
+    });
   } catch (e) {
     console.error(`sidekick error after ${Date.now() - startedAt}ms`, e);
     return NextResponse.json(

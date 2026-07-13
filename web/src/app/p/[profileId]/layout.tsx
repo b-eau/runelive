@@ -5,6 +5,7 @@ import { authorizedProfile, userAccounts } from "@/lib/data";
 import { ACCOUNT_TYPE_LABELS, PROFILE_KIND_LABELS } from "@/lib/osrs";
 import TabNav from "./TabNav";
 import ProfileSwitcher from "./ProfileSwitcher";
+import VoiceWidget from "@/components/VoiceWidget";
 
 export default async function ProfileLayout({
   children,
@@ -60,6 +61,7 @@ export default async function ProfileLayout({
         <TabNav profileId={profile.id} />
         {children}
       </main>
+      <VoiceWidget profileId={profile.id} serverTts={!!process.env.ELEVENLABS_API_KEY} />
     </div>
   );
 }

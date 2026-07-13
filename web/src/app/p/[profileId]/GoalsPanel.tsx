@@ -1,6 +1,7 @@
 import type { Goal } from "@prisma/client";
-import { addGoal, setGoalStatus } from "./actions";
+import { addGoal, deleteGoal } from "./actions";
 import GoalProposals from "./GoalProposals";
+import GoalRow from "./GoalRow";
 
 export default function GoalsPanel({ profileId, goals }: { profileId: string; goals: Goal[] }) {
   const active = goals.filter((g) => g.status === "ACTIVE");
@@ -14,43 +15,20 @@ export default function GoalsPanel({ profileId, goals }: { profileId: string; go
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
         {active.length === 0 && <div className="empty">No goals yet. What&apos;s this account about?</div>}
         {active.map((g) => (
-          <div
-            key={g.id}
-            style={{
-              display: "flex",
-              alignItems: "flex-start",
-              gap: 10,
-              background: "var(--surface-2)",
-              border: "1px solid var(--border)",
-              borderRadius: 10,
-              padding: "10px 12px",
-            }}
-          >
-            <span aria-hidden style={{ marginTop: 1 }}>
-              🎯
-            </span>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontWeight: 650, fontSize: 14 }}>{g.title}</div>
-              {g.notes && (
-                <div style={{ fontSize: 12.5, color: "var(--ink-3)", marginTop: 2 }}>{g.notes}</div>
-              )}
-            </div>
-            <form action={setGoalStatus.bind(null, profileId, g.id, "DONE")}>
-              <button className="btn ghost" style={{ padding: "4px 8px", fontSize: 12 }} title="Mark complete">
-                ✓
-              </button>
-            </form>
-            <form action={setGoalStatus.bind(null, profileId, g.id, "ARCHIVED")}>
-              <button className="btn ghost" style={{ padding: "4px 8px", fontSize: 12 }} title="Archive">
-                ✕
-              </button>
-            </form>
-          </div>
+          <GoalRow key={g.id} profileId={profileId} goal={g} />
         ))}
         {done.map((g) => (
-          <div key={g.id} style={{ display: "flex", gap: 10, padding: "4px 12px", color: "var(--ink-3)", fontSize: 13.5 }}>
+          <div
+            key={g.id}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 12px", color: "var(--ink-3)", fontSize: 13.5 }}
+          >
             <span aria-hidden>🏆</span>
-            <s>{g.title}</s>
+            <s style={{ flex: 1, minWidth: 0 }}>{g.title}</s>
+            <form action={deleteGoal.bind(null, profileId, g.id)}>
+              <button className="btn ghost" style={{ padding: "4px 8px", fontSize: 12 }} title="Delete goal" aria-label="Delete goal">
+                🗑
+              </button>
+            </form>
           </div>
         ))}
       </div>

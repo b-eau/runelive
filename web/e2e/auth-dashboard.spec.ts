@@ -92,6 +92,33 @@ test.describe("authenticated dashboard", () => {
     await expect(page.getByText("Start a fresh conversation:")).toBeVisible();
   });
 
+  test("goals can be edited and deleted", async ({ page }) => {
+    await signIn(page, "beaumitch@gmail.com");
+    await openMainProfile(page);
+
+    // Edit the first active goal's title in place. The edit input has no
+    // placeholder (the "add goal" input does), so scope to that.
+    await page.getByRole("button", { name: "Edit goal" }).first().click();
+    const titleInput = page.locator('input[name="title"]:not([placeholder])');
+    await titleInput.fill("Edited goal title");
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Edited goal title")).toBeVisible();
+
+    // Complete a goal, then delete it from the completed list.
+    await page.getByRole("button", { name: "Mark complete" }).first().click();
+    await page.getByRole("button", { name: "Delete goal" }).first().click();
+    await expect(page.locator("s", { hasText: "Edited goal title" })).toHaveCount(0);
+  });
+
+  test("voice widget opens with idle controls", async ({ page }) => {
+    await signIn(page, "beaumitch@gmail.com");
+    await openMainProfile(page);
+    await page.getByRole("button", { name: "Open voice Sidekick" }).click();
+    await expect(page.getByText("Voice Sidekick")).toBeVisible();
+    await expect(page.getByText("Tap the mic to talk")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start talking" })).toBeVisible();
+  });
+
   test("a brand-new user sees the empty state", async ({ page }) => {
     await signIn(page, `fresh-${Date.now()}@example.com`);
     await expect(page).toHaveURL(/\/dashboard/);

@@ -32,9 +32,17 @@ const SUGGESTION_SCHEMA = {
 
 // Where the suggestions appear. "chat" is the general starter set; the others
 // bias both the heuristics and the LLM toward that tab's subject matter.
-export type SuggestContext = "chat" | "overview" | "skills" | "quests" | "bank" | "bosses";
+export type SuggestContext = "chat" | "overview" | "skills" | "quests" | "bank" | "bosses" | "achievements";
 
-export const SUGGEST_CONTEXTS: SuggestContext[] = ["chat", "overview", "skills", "quests", "bank", "bosses"];
+export const SUGGEST_CONTEXTS: SuggestContext[] = [
+  "chat",
+  "overview",
+  "skills",
+  "quests",
+  "bank",
+  "bosses",
+  "achievements",
+];
 
 const CONTEXT_FOCUS: Record<SuggestContext, string> = {
   chat: "",
@@ -43,6 +51,7 @@ const CONTEXT_FOCUS: Record<SuggestContext, string> = {
   quests: "Focus on quests the player has NOT finished, quest rewards worth chasing, and achievement diary tiers still open. If all quests are done, do not mention quests or the quest cape.",
   bank: "Focus on the player's wealth: money-making methods that fit their stats, gear upgrades they could afford, and what to buy next.",
   bosses: "Focus on PvM: which boss to learn next given their kill counts, gear upgrades for bosses they already do, and kill-count milestones.",
+  achievements: "Focus on completion progress: the next achievement diary tier within reach, combat achievement tiers to push for, and notable collection log slots to chase. Never propose a diary tier or CA tier the context shows is already complete.",
 };
 
 /** Shared structured-output LLM call (Anthropic or Gemini). null on failure. */
@@ -214,6 +223,14 @@ async function heuristicProfileSuggestions(profileId: string, context: SuggestCo
     case "bosses":
       ordered = [nextBoss, "What gear upgrades would speed up my main boss?", "Which boss is most profitable at my stats?", ...goalPrompts];
       break;
+    case "achievements":
+      ordered = [
+        "What's the closest achievement diary tier I can finish?",
+        "Which combat achievement tier should I push for next?",
+        "What collection log items are realistic for me to chase?",
+        ...goalPrompts,
+      ];
+      break;
     case "overview":
       ordered = [...goalPrompts, nextLevel, nextBoss, "What should I focus on in my next play session?"];
       break;
@@ -255,6 +272,39 @@ Rules: ground every followup in the reply or the player context (no invented fac
  * one-click chips in the UI. Best-effort: returns [] without an LLM key or
  * on any failure.
  */
+const SPEAK_SYSTEM = `You rewrite an assistant's full written reply into a brief spoken response for text-to-speech.
+
+Rules:
+- Include ONLY the key answer to the user's question. Drop tables, lists, step-by-step detail, caveats, and anything that belongs in the written version.
+- 1-2 short sentences, at most ~45 words. Natural and conversational to hear aloud.
+- No markdown, no bullet points, no emoji, no URLs. Write numbers as words where it reads better (e.g. "about one point two million").
+- If the reply is already a short sentence, lightly tighten it for speech.`;
+
+/**
+ * Condenses a full reply into a short line optimized for narration. The full
+ * text still shows in the transcript; only this is spoken. Falls back to a
+ * markdown-stripped clip of the reply if the LLM is unavailable.
+ */
+export async function summarizeForSpeech(userMessage: string, reply: string): Promise<string> {
+  const parsed = await llmJson<{ spoken?: string }>(
+    SPEAK_SYSTEM,
+    `User asked:\n${userMessage.slice(0, 600)}\n\nAssistant reply:\n${reply.slice(0, 2500)}\n\nProduce the spoken version.`,
+    {
+      type: "object",
+      additionalProperties: false,
+      properties: { spoken: { type: "string" } },
+      required: ["spoken"],
+    },
+    800,
+  );
+  const spoken = (parsed?.spoken ?? "").trim();
+  if (spoken) return spoken.slice(0, 600);
+  // Fallback: strip markdown and clip to the first couple of sentences.
+  const plain = reply.replace(/[*_#`>|]/g, "").replace(/\s+/g, " ").trim();
+  const sentences = plain.split(/(?<=[.!?])\s+/).slice(0, 2).join(" ");
+  return sentences.slice(0, 400);
+}
+
 export async function suggestFollowups(
   profileId: string,
   userMessage: string,

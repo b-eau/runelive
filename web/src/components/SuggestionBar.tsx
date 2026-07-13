@@ -12,7 +12,7 @@ export default function SuggestionBar({
   context,
 }: {
   profileId: string;
-  context: "overview" | "skills" | "quests" | "bank" | "bosses";
+  context: "overview" | "skills" | "quests" | "bank" | "bosses" | "achievements";
 }) {
   const [suggestions, setSuggestions] = useState<string[]>([]);
 

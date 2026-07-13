@@ -536,6 +536,140 @@ select:focus-visible {
   padding-bottom: max(16px, env(safe-area-inset-bottom));
 }
 
+/* ------------------------------------------------------------- voice widget */
+
+.voice-fab {
+  position: fixed;
+  right: 20px;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 90;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  font-size: 22px;
+  background: linear-gradient(135deg, var(--gold) 0%, var(--gold-deep) 100%);
+  color: #1a1305;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.voice-fab:hover {
+  filter: brightness(1.06);
+}
+
+.voice-dock {
+  position: fixed;
+  right: 20px;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 95;
+  width: min(320px, calc(100vw - 32px));
+}
+
+/* Panel: shared by the in-page dock and the Document PiP window. In PiP it
+   fills the small OS window (100vh); docked it sits above the FAB. */
+.voice-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 100dvh;
+  background: var(--surface-1);
+  color: var(--ink);
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  padding: 14px;
+  font-family: var(--font);
+}
+.voice-dock .voice-panel {
+  min-height: 0;
+}
+.voice-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.voice-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+.voice-icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+.voice-icon-btn:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.voice-body {
+  flex: 1;
+  min-height: 76px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+}
+.voice-you {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  font-style: italic;
+}
+.voice-reply {
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.voice-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.voice-status {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.voice-status.voice-listening {
+  color: var(--good);
+}
+.voice-status.voice-thinking {
+  color: var(--gold);
+}
+.voice-mic {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  font-size: 22px;
+  background: linear-gradient(135deg, var(--gold) 0%, var(--gold-deep) 100%);
+  color: #1a1305;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.voice-mic:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.voice-mic.stop {
+  background: var(--critical);
+  color: #fff;
+  font-size: 16px;
+  animation: voice-pulse 1.2s ease infinite;
+}
+@keyframes voice-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--critical) 55%, transparent); }
+  50% { box-shadow: 0 0 0 8px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .voice-mic.stop { animation: none; }
+}
+
 /* Install prompt (PWA) */
 .install-prompt {
   position: fixed;
