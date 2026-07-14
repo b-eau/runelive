@@ -1,18 +1,24 @@
 "use client";
 
 // Onboarding nudge: LLM-proposed, stats-grounded account goals shown when a
-// profile has few goals of its own. One click adds a proposal to the profile.
+// profile has few goals of its own. One click hands the proposal to the
+// parent's optimistic `onAdd`, so it appears in the goal list instantly.
 
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 type ProposedGoal = { title: string; rationale: string };
 
-export default function GoalProposals({ profileId, show }: { profileId: string; show: boolean }) {
-  const router = useRouter();
+export default function GoalProposals({
+  profileId,
+  show,
+  onAdd,
+}: {
+  profileId: string;
+  show: boolean;
+  onAdd: (title: string, notes?: string) => void;
+}) {
   const [goals, setGoals] = useState<ProposedGoal[]>([]);
   const [loading, setLoading] = useState(show);
-  const [adding, setAdding] = useState<string | null>(null);
 
   useEffect(() => {
     if (!show) return;
@@ -29,21 +35,9 @@ export default function GoalProposals({ profileId, show }: { profileId: string; 
     };
   }, [profileId, show]);
 
-  async function add(goal: ProposedGoal) {
-    setAdding(goal.title);
-    try {
-      const res = await fetch("/api/goals/add", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId, title: goal.title, notes: goal.rationale }),
-      });
-      if (res.ok) {
-        setGoals((gs) => gs.filter((g) => g.title !== goal.title));
-        router.refresh(); // reflect the new goal in the active list
-      }
-    } finally {
-      setAdding(null);
-    }
+  function accept(goal: ProposedGoal) {
+    setGoals((gs) => gs.filter((g) => g.title !== goal.title));
+    onAdd(goal.title, goal.rationale);
   }
 
   if (!show || (!loading && goals.length === 0)) return null;
@@ -70,10 +64,9 @@ export default function GoalProposals({ profileId, show }: { profileId: string; 
               <button
                 className="btn"
                 style={{ padding: "5px 12px", fontSize: 12.5, flexShrink: 0 }}
-                onClick={() => void add(g)}
-                disabled={adding === g.title}
+                onClick={() => accept(g)}
               >
-                {adding === g.title ? "Adding…" : "+ Add"}
+                + Add
               </button>
             </div>
           ))}

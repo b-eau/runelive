@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { authorizedProfile } from "@/lib/data";
 import { titleCase } from "@/lib/osrs";
 import { DIARY_AREAS, DIARY_TIERS } from "@/lib/quests";
-import SuggestionBar from "@/components/SuggestionBar";
+import AskSidekick from "@/components/AskSidekick";
 
 export const metadata = { title: "Achievements" };
 
@@ -41,7 +41,10 @@ export default async function AchievementsPage({ params }: { params: Promise<{ p
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <SuggestionBar profileId={profileId} context="achievements" />
+      <header className="page-head">
+        <h1>Achievements</h1>
+        <p className="sub">Combat achievements, collection log, and diaries</p>
+      </header>
       <div className="grid cols-2" style={{ alignItems: "start" }}>
         {/* Combat achievements */}
         <div className="card">
@@ -190,6 +193,7 @@ export default async function AchievementsPage({ params }: { params: Promise<{ p
             </table>
           </div>
         )}
+        <AskSidekick profileId={profileId} context="achievements" />
       </div>
     </div>
   );

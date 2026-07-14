@@ -55,8 +55,8 @@ test.describe("authenticated dashboard", () => {
   test("sidekick chat page loads in demo mode", async ({ page }) => {
     await signIn(page, "beaumitch@gmail.com");
     await openMainProfile(page);
-    // Exact name: /Sidekick/ alone would also match the "OSRS Sidekick" brand link.
-    await page.getByRole("link", { name: "Sidekick ✨" }).click();
+    // Exact: the sidebar item is "Sidekick"; the brand link is "OSRS Sidekick".
+    await page.getByRole("link", { name: "Sidekick", exact: true }).click();
 
     await expect(page.getByText("Demo mode", { exact: false })).toBeVisible();
     await expect(page.getByText(/ask me anything/i)).toBeVisible();
@@ -65,7 +65,7 @@ test.describe("authenticated dashboard", () => {
   test("chat: parallel conversations, history, markdown replies", async ({ page }) => {
     await signIn(page, "beaumitch@gmail.com");
     await openMainProfile(page);
-    await page.getByRole("link", { name: "Sidekick ✨" }).click();
+    await page.getByRole("link", { name: "Sidekick", exact: true }).click();
 
     // First conversation (demo mode replies instantly) appears in the rail,
     // titled after the opening message.

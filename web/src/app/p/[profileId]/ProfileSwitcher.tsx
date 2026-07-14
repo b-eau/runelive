@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 export default function ProfileSwitcher({
   current,
   options,
+  compact = false,
 }: {
   current: string;
   options: { id: string; label: string }[];
+  compact?: boolean;
 }) {
   const router = useRouter();
   if (options.length <= 1) return null;
@@ -15,7 +17,11 @@ export default function ProfileSwitcher({
     <select
       value={current}
       onChange={(e) => router.push(`/p/${e.target.value}`)}
-      style={{ width: "auto", maxWidth: 260, padding: "7px 10px", fontSize: 13 }}
+      style={
+        compact
+          ? { width: "auto", maxWidth: 150, padding: "5px 8px", fontSize: 12, borderRadius: 8 }
+          : { width: "100%", padding: "7px 10px", fontSize: 12.5 }
+      }
       aria-label="Switch profile"
     >
       {options.map((o) => (

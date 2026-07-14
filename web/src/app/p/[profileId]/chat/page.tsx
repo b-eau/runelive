@@ -10,10 +10,10 @@ export default async function ChatPage({
   searchParams,
 }: {
   params: Promise<{ profileId: string }>;
-  searchParams: Promise<{ ask?: string }>;
+  searchParams: Promise<{ ask?: string; c?: string }>;
 }) {
   const { profileId } = await params;
-  const { ask } = await searchParams;
+  const { ask, c } = await searchParams;
   const profile = await authorizedProfile(profileId);
   if (!profile) notFound();
 
@@ -24,6 +24,7 @@ export default async function ChatPage({
       demoMode={!llmEnabled()}
       serverTts={!!process.env.ELEVENLABS_API_KEY}
       initialPrompt={ask ? ask.slice(0, 300) : undefined}
+      initialConversationId={c}
     />
   );
 }
