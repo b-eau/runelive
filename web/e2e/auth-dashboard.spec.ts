@@ -48,8 +48,14 @@ test.describe("authenticated dashboard", () => {
     // Slayer is the seeded 99
     const slayerCell = page.locator(".skill-cell", { hasText: "Slayer" });
     await expect(slayerCell).toContainText("99");
-    await slayerCell.click();
-    await expect(page.getByText("Level 99")).toBeVisible();
+    // Selecting a skill soft-navigates to ?skill=slayer and reveals its level.
+    // The grid is server-rendered, so it's clickable before the route finishes
+    // hydrating — a click in that window can drop the soft-nav and never land.
+    // Retry the click until the detail appears so CI doesn't flake here.
+    await expect(async () => {
+      await slayerCell.click();
+      await expect(page.getByText("Level 99")).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 15_000 });
   });
 
   test("sidekick chat page loads in demo mode", async ({ page }) => {
