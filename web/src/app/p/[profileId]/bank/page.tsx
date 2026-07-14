@@ -4,7 +4,7 @@ import { authorizedProfile } from "@/lib/data";
 import { formatGp } from "@/lib/osrs";
 import { bankSeries } from "@/lib/series";
 import TrendChart from "@/components/TrendChart";
-import SuggestionBar from "@/components/SuggestionBar";
+import AskSidekick from "@/components/AskSidekick";
 import BankTable from "./BankTable";
 
 export const metadata = { title: "Bank" };
@@ -55,7 +55,10 @@ export default async function BankPage({ params }: { params: Promise<{ profileId
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <SuggestionBar profileId={profileId} context="bank" />
+      <header className="page-head">
+        <h1>Bank</h1>
+        <p className="sub">Everything you own — bank, gear, and inventory, priced live</p>
+      </header>
       <div className="card">
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
           <h3>Bank value — last 12 months</h3>
@@ -63,6 +66,7 @@ export default async function BankPage({ params }: { params: Promise<{ profileId
         </div>
         <p className="sub">Estimated with GE guide prices; untradeables count as 0</p>
         <TrendChart points={series} color="var(--series-3)" unit=" gp" />
+        <AskSidekick profileId={profileId} context="bank" />
       </div>
       <BankTable bank={bank} equipment={equipment} inventory={inventory} />
     </div>

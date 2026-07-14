@@ -5,7 +5,7 @@ import { authorizedProfile } from "@/lib/data";
 import { titleCase } from "@/lib/osrs";
 import { kcSeries } from "@/lib/series";
 import TrendChart from "@/components/TrendChart";
-import SuggestionBar from "@/components/SuggestionBar";
+import AskSidekick from "@/components/AskSidekick";
 
 export const metadata = { title: "Bosses" };
 
@@ -31,7 +31,10 @@ export default async function BossesPage({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <SuggestionBar profileId={profileId} context="bosses" />
+      <header className="page-head">
+        <h1>Bosses</h1>
+        <p className="sub">Kill counts synced from in-game messages, charted over time</p>
+      </header>
       <div className="grid cols-2" style={{ alignItems: "start" }}>
         <div className="card">
           <h3>Kill counts</h3>
@@ -78,6 +81,7 @@ export default async function BossesPage({
         ) : (
           <div className="empty">Select a boss to see its trend.</div>
         )}
+        <AskSidekick profileId={profileId} context="bosses" />
         </div>
       </div>
     </div>

@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { authorizedProfile } from "@/lib/data";
 import { isMiniquest } from "@/lib/quests";
-import SuggestionBar from "@/components/SuggestionBar";
+import AskSidekick from "@/components/AskSidekick";
 
 export const metadata = { title: "Quests" };
 
@@ -28,13 +28,16 @@ export default async function QuestsPage({ params }: { params: Promise<{ profile
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <SuggestionBar profileId={profileId} context="quests" />
+      <header className="page-head">
+        <h1>Quests</h1>
+        <p className="sub">
+          {done} of {fullQuests.length} quests complete · diaries live on the Achievements tab
+        </p>
+      </header>
       <div className="card">
         <h3>Quest log</h3>
-        <p className="sub">
-          {done} of {fullQuests.length} quests complete · unfinished first · diaries live on the
-          Achievements tab
-        </p>
+        <p className="sub">Unfinished first</p>
+        <AskSidekick profileId={profileId} context="quests" bare />
         {quests.length === 0 ? (
           <div className="empty">No quest data yet — open your quest journal in-game to sync it.</div>
         ) : (

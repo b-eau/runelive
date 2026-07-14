@@ -14,7 +14,12 @@ export APP_URL="http://localhost:3100"
 # Determinism: chat must run in demo mode even if the shell has a key.
 unset ANTHROPIC_API_KEY GEMINI_API_KEY || true
 
-npx prisma db push --skip-generate --accept-data-loss --force-reset > /dev/null
+# Recreate an empty schema, then apply the current Prisma schema to it.
+# (Two steps instead of `db push --force-reset`, which newer Prisma CLIs
+# refuse to run unattended.)
+echo 'DROP SCHEMA IF EXISTS "public" CASCADE; CREATE SCHEMA "public";' \
+  | npx prisma db execute --schema prisma/schema.prisma --stdin > /dev/null
+npx prisma db push --skip-generate > /dev/null
 npx tsx prisma/seed.ts > /dev/null
 
 # CI builds beforehand; locally, build on demand.

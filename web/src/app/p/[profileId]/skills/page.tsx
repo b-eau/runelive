@@ -5,7 +5,7 @@ import { authorizedProfile } from "@/lib/data";
 import { SKILLS, formatXp, levelProgress, titleCase, xpForLevel } from "@/lib/osrs";
 import { xpSeries } from "@/lib/series";
 import TrendChart from "@/components/TrendChart";
-import SuggestionBar from "@/components/SuggestionBar";
+import AskSidekick from "@/components/AskSidekick";
 import { SKILL_EMOJI } from "@/components/skillEmoji";
 
 export const metadata = { title: "Skills" };
@@ -33,7 +33,10 @@ export default async function SkillsPage({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <SuggestionBar profileId={profileId} context="skills" />
+      <header className="page-head">
+        <h1>Skills</h1>
+        <p className="sub">Levels, XP, and progress over time — pick a skill to chart it</p>
+      </header>
       <div className="card">
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
           <h3 style={{ fontSize: 17 }}>
@@ -74,6 +77,7 @@ export default async function SkillsPage({
           </div>
         </div>
         <TrendChart points={series} color="var(--series-1)" unit=" xp" height={240} />
+        <AskSidekick profileId={profileId} context="skills" />
       </div>
 
       <div className="skill-grid">

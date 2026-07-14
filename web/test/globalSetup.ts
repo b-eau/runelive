@@ -14,12 +14,15 @@ export const TEST_DATABASE_URL =
   "postgresql://postgres:postgres@127.0.0.1:5432/sidekick_test";
 
 export default function setup() {
-  execSync(
-    "npx prisma db push --skip-generate --accept-data-loss --force-reset",
-    {
-      cwd: path.join(__dirname, ".."),
-      env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
-      stdio: "inherit",
-    },
-  );
+  const cwd = path.join(__dirname, "..");
+  const env = { ...process.env, DATABASE_URL: TEST_DATABASE_URL };
+  // Recreate an empty schema, then apply the current Prisma schema to it.
+  // (Two steps instead of `db push --force-reset`, which newer Prisma CLIs
+  // refuse to run unattended.)
+  execSync("npx prisma db execute --schema prisma/schema.prisma --stdin", {
+    cwd,
+    env,
+    input: 'DROP SCHEMA IF EXISTS "public" CASCADE; CREATE SCHEMA "public";',
+  });
+  execSync("npx prisma db push --skip-generate", { cwd, env, stdio: "inherit" });
 }

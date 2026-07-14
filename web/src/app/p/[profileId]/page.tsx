@@ -5,8 +5,9 @@ import { authorizedProfile } from "@/lib/data";
 import { isRsnLinked } from "@/lib/rsnLink";
 import { formatGp, formatXp, titleCase } from "@/lib/osrs";
 import { bankSeries, recentGains, xpSeries } from "@/lib/series";
+import { timeAgo } from "@/lib/timeAgo";
 import TrendChart from "@/components/TrendChart";
-import SuggestionBar from "@/components/SuggestionBar";
+import AskSidekick from "@/components/AskSidekick";
 import GoalsPanel from "./GoalsPanel";
 
 export const metadata = { title: "Overview" };
@@ -16,16 +17,23 @@ export default async function OverviewPage({ params }: { params: Promise<{ profi
   const profile = await authorizedProfile(profileId);
   if (!profile) notFound();
 
-  const [overall, skillCount, quests, bank, goals, overallSeries, bankPoints, gains] = await Promise.all([
-    db.skillState.findUnique({ where: { profileId_skill: { profileId, skill: "overall" } } }),
-    db.skillState.count({ where: { profileId, skill: { not: "overall" } } }),
-    db.questState.groupBy({ by: ["state"], where: { profileId }, _count: true }),
-    db.containerState.findUnique({ where: { profileId_container: { profileId, container: "BANK" } } }),
-    db.goal.findMany({ where: { profileId }, orderBy: [{ status: "asc" }, { createdAt: "asc" }] }),
-    xpSeries(profileId, "overall", 365),
-    bankSeries(profileId, 365),
-    recentGains(profileId, 7),
-  ]);
+  const [overall, skillCount, quests, bank, goals, overallSeries, bankPoints, gains, conversations] =
+    await Promise.all([
+      db.skillState.findUnique({ where: { profileId_skill: { profileId, skill: "overall" } } }),
+      db.skillState.count({ where: { profileId, skill: { not: "overall" } } }),
+      db.questState.groupBy({ by: ["state"], where: { profileId }, _count: true }),
+      db.containerState.findUnique({ where: { profileId_container: { profileId, container: "BANK" } } }),
+      db.goal.findMany({ where: { profileId }, orderBy: [{ status: "asc" }, { createdAt: "asc" }] }),
+      xpSeries(profileId, "overall", 365),
+      bankSeries(profileId, 365),
+      recentGains(profileId, 7),
+      db.conversation.findMany({
+        where: { profileId },
+        orderBy: { updatedAt: "desc" },
+        take: 3,
+        select: { id: true, title: true, updatedAt: true },
+      }),
+    ]);
 
   const questsDone = quests.find((q) => q.state === "FINISHED")?._count ?? 0;
   const questsTotal = quests.reduce((acc, q) => acc + q._count, 0);
@@ -33,6 +41,11 @@ export default async function OverviewPage({ params }: { params: Promise<{ profi
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <header className="page-head">
+        <h1>Overview</h1>
+        <p className="sub">Where {profile.account.displayName} stands, at a glance</p>
+      </header>
+
       {isRsnLinked(profile.account.accountHash) && (
         <div
           style={{
@@ -50,7 +63,7 @@ export default async function OverviewPage({ params }: { params: Promise<{ profi
           to sync your bank, quests, gear, and live progress; everything here carries over.
         </div>
       )}
-      <SuggestionBar profileId={profileId} context="overview" />
+
       <div className="grid cols-4">
         <div className="stat">
           <span className="label">Total level</span>
@@ -75,6 +88,36 @@ export default async function OverviewPage({ params }: { params: Promise<{ profi
           <span className="value">{bank ? formatGp(bank.value) : "—"}</span>
           <span className="delta">GE guide prices</span>
         </div>
+      </div>
+
+      {/* The critical path: resume a conversation or start a grounded one. */}
+      <div className="card">
+        <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+          <h3>
+            <span aria-hidden>✨</span> Sidekick
+          </h3>
+          <p className="sub" style={{ margin: 0, flex: 1 }}>
+            {conversations.length > 0 ? "Jump back in, or start something new" : "Your AI guide, grounded in this account"}
+          </p>
+          <Link href={`/p/${profileId}/chat`} className="btn" style={{ padding: "6px 12px", fontSize: 12.5 }}>
+            Open chat →
+          </Link>
+        </div>
+        {conversations.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 2, margin: "10px 0 2px" }}>
+            {conversations.map((c) => (
+              <Link key={c.id} href={`/p/${profileId}/chat?c=${c.id}`} className="conv-row">
+                <span aria-hidden>💬</span>
+                <span className="title">{c.title}</span>
+                <span className="when">{timeAgo(c.updatedAt)}</span>
+                <span className="go" aria-hidden>
+                  →
+                </span>
+              </Link>
+            ))}
+          </div>
+        )}
+        <AskSidekick profileId={profileId} context="overview" />
       </div>
 
       <div className="grid cols-2">
