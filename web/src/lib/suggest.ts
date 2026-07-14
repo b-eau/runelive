@@ -101,6 +101,8 @@ const GOAL_SYSTEM = `You propose meaningful, motivating Old School RuneScape acc
 Grounding rules — violating any makes a goal worthless:
 - Ground every goal in the player's real data from the context. Respect the account type: ironmen cannot use the Grand Exchange or trade, so never propose GE/bond/buying goals to them.
 - Never propose content the context shows is already done: not a skill already 99, not a quest cape when all quests are complete, not a diary tier already finished.
+- Read the account's build, not just individual levels: a lopsided combat profile is a deliberate build worth serving (e.g. 97 Strength with 1 Defence is a pure — recommend a max-pure or PK-oriented goal, never a goal that would raise Defence).
+- Never propose a goal the player already has, or a trivial rephrasing of one — the context lists their existing goals. Recommend complementary directions and fill gaps those goals leave open.
 - Mix time horizons across the set: one achievable soon, one medium-term, one aspirational — all calibrated to their current levels and progress.
 - Prefer goals the assistant can steer toward and track: skill-level targets, boss kill-count milestones, quest/diary/collection-log completion, or a wealth target.
 
@@ -126,27 +128,52 @@ const GOAL_SCHEMA = {
   required: ["goals"],
 };
 
-function sanitizeGoals(raw: ProposedGoal[] | undefined): ProposedGoal[] {
-  return (raw ?? [])
-    .filter((g) => g && typeof g.title === "string" && g.title.trim().length > 0)
-    .map((g) => ({
-      title: g.title.trim().slice(0, 80),
-      rationale: (typeof g.rationale === "string" ? g.rationale : "").trim().slice(0, 160),
-    }))
-    .slice(0, 3);
+/** Normalize a goal title for dedupe: case/punctuation/whitespace-insensitive. */
+function goalKey(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-/** Generate grounded goal proposals from a prebuilt context string. */
-export async function generateGoals(context: string): Promise<ProposedGoal[]> {
+function sanitizeGoals(raw: ProposedGoal[] | undefined, count: number, exclude?: Set<string>): ProposedGoal[] {
+  const seen = new Set(exclude ?? []);
+  const out: ProposedGoal[] = [];
+  for (const g of raw ?? []) {
+    if (!g || typeof g.title !== "string" || g.title.trim().length === 0) continue;
+    const title = g.title.trim().slice(0, 80);
+    const key = goalKey(title);
+    if (seen.has(key)) continue; // drop duplicates and anything the player already has
+    seen.add(key);
+    out.push({
+      title,
+      rationale: (typeof g.rationale === "string" ? g.rationale : "").trim().slice(0, 160),
+    });
+    if (out.length >= count) break;
+  }
+  return out;
+}
+
+/**
+ * Generate grounded goal proposals from a prebuilt context string. Pass the
+ * player's existing goal titles to exclude them (the on-demand recommender
+ * flow), so the model never echoes a goal they already have.
+ */
+export async function generateGoals(
+  context: string,
+  options: { count?: number; existingTitles?: string[] } = {},
+): Promise<ProposedGoal[]> {
+  const count = options.count ?? 3;
+  const existing = options.existingTitles?.filter((t) => t.trim().length > 0) ?? [];
+  const avoid = existing.length
+    ? `\n\nThe player already has these goals — do not repeat or rephrase any of them:\n${existing.map((t) => `- ${t}`).join("\n")}`
+    : "";
   const parsed = await llmJson<{ goals?: ProposedGoal[] }>(
     GOAL_SYSTEM,
-    `Player context:\n${context}\n\nPropose exactly 3 account goals.`,
+    `Player context:\n${context}${avoid}\n\nPropose exactly ${count} account goals.`,
     GOAL_SCHEMA,
     // Generous budget: Gemini's default-on thinking shares this with the
     // output, so a tight cap truncates the JSON to nothing.
     2048,
   );
-  return sanitizeGoals(parsed?.goals);
+  return sanitizeGoals(parsed?.goals, count, new Set(existing.map(goalKey)));
 }
 
 /**
@@ -172,6 +199,59 @@ export async function proposeGoals(profileId: string): Promise<ProposedGoal[]> {
     await db.suggestionCache.upsert({
       where: { profileId_context: { profileId, context: "goals" } },
       create: { profileId, context: "goals", payload, updatedAt: new Date() },
+      update: { payload, updatedAt: new Date() },
+    });
+  }
+  return goals;
+}
+
+const RECOMMEND_CONTEXT = "goal-recs";
+const RECOMMEND_COUNT = 4;
+
+/**
+ * On-demand goal recommendations for an account that already has goals of its
+ * own. Unlike {@link proposeGoals} (the one-time onboarding nudge), this reads
+ * the player's current goals so it never suggests something they already have
+ * and instead fills the gaps around them. Results are cached so re-opening the
+ * panel is instant; pass `refresh` to regenerate a fresh set on demand.
+ */
+export async function recommendGoals(
+  profileId: string,
+  { refresh = false }: { refresh?: boolean } = {},
+): Promise<ProposedGoal[]> {
+  const existing = await db.goal.findMany({
+    where: { profileId, status: "ACTIVE" },
+    select: { title: true },
+  });
+  const existingKeys = new Set(existing.map((g) => goalKey(g.title)));
+
+  if (!refresh) {
+    const row = await db.suggestionCache.findUnique({
+      where: { profileId_context: { profileId, context: RECOMMEND_CONTEXT } },
+    });
+    if (row) {
+      try {
+        const cached = JSON.parse(row.payload) as ProposedGoal[];
+        // Drop any cached rec the player has since added as a real goal.
+        const fresh = Array.isArray(cached)
+          ? cached.filter((g) => g?.title && !existingKeys.has(goalKey(g.title)))
+          : [];
+        if (fresh.length > 0) return fresh;
+      } catch {
+        /* regenerate below */
+      }
+    }
+  }
+
+  const goals = await generateGoals(await buildContext(profileId), {
+    count: RECOMMEND_COUNT,
+    existingTitles: existing.map((g) => g.title),
+  });
+  if (goals.length > 0) {
+    const payload = JSON.stringify(goals);
+    await db.suggestionCache.upsert({
+      where: { profileId_context: { profileId, context: RECOMMEND_CONTEXT } },
+      create: { profileId, context: RECOMMEND_CONTEXT, payload, updatedAt: new Date() },
       update: { payload, updatedAt: new Date() },
     });
   }
