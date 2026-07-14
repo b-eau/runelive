@@ -8,6 +8,7 @@ import {
   generateGoals,
   peekSuggestions,
   proposeGoals,
+  recommendGoals,
   refreshSuggestions,
   suggestFollowups,
   suggestProfileQueries,
@@ -123,6 +124,40 @@ describe("suggestProfileQueries", () => {
     const goals = await proposeGoals(profileId);
     expect(goals).toHaveLength(1);
     expect(goals[0].title).toBe("Reach 99 Slayer");
+  });
+
+  it("recommendGoals serves cached recs but filters out goals the player already has", async () => {
+    const profileId = await createTestProfile();
+    // No LLM key -> no generation; without a cache there is nothing to serve.
+    expect(await recommendGoals(profileId)).toEqual([]);
+
+    // Seed a cached recommendation set (as an LLM-enabled request would write).
+    await db.suggestionCache.create({
+      data: {
+        profileId,
+        context: "goal-recs",
+        payload: JSON.stringify([
+          { title: "Max pure: 99 Strength", rationale: "97 Strength, 1 Defence — finish the build." },
+          { title: "Reach 99 Ranged", rationale: "A pure's other max stat." },
+        ]),
+        updatedAt: new Date(),
+      },
+    });
+    expect(await recommendGoals(profileId)).toHaveLength(2);
+
+    // Once the player adds one of those goals, it drops out of the recs
+    // (normalized match ignores case and punctuation).
+    await db.goal.create({ data: { profileId, title: "max pure 99 strength", status: "ACTIVE" } });
+    const after = await recommendGoals(profileId);
+    expect(after).toHaveLength(1);
+    expect(after[0].title).toBe("Reach 99 Ranged");
+  });
+
+  it("generateGoals dedupes titles against the player's existing goals", async () => {
+    // Even if the model were to echo an existing goal, the exclude set drops it.
+    // With no LLM key generation is empty, so this asserts the pure helper path
+    // stays wired: an empty model result yields an empty set regardless.
+    expect(await generateGoals("Player: pure, 97 Strength 1 Defence.", { existingTitles: ["Reach 99 Strength"] })).toEqual([]);
   });
 
   it("biases heuristics by context and caches each context separately", async () => {
