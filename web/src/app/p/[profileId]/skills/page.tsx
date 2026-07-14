@@ -77,7 +77,6 @@ export default async function SkillsPage({
           </div>
         </div>
         <TrendChart points={series} color="var(--series-1)" unit=" xp" height={240} />
-        <AskSidekick profileId={profileId} context="skills" />
       </div>
 
       <div className="skill-grid">
@@ -113,6 +112,12 @@ export default async function SkillsPage({
             </Link>
           );
         })}
+      </div>
+
+      {/* Chips live below the grid so loading them never shifts the cells
+          you click. */}
+      <div className="card" style={{ padding: "14px 18px" }}>
+        <AskSidekick profileId={profileId} context="skills" bare />
       </div>
     </div>
   );
