@@ -914,6 +914,29 @@ select:focus-visible {
   overflow-x: auto;
 }
 
+/* Bank item rows: fixed-size icon slot so names stay aligned whether or not the
+   icon loads. The slot reserves space even when an icon is missing/broken. */
+.item-cell {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 32px;
+}
+
+.item-icon img {
+  max-width: 100%;
+  max-height: 100%;
+  image-rendering: pixelated;
+}
+
 /* ------------------------------------------------------------- skeletons
    Loading placeholders that mirror the final layout, so route changes are
    instant and content settles without shifting. */

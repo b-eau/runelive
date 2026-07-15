@@ -10,6 +10,31 @@ function gp(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+// Inventory icons keyed by item id, from RuneLite's static cache CDN — the same
+// source the item catalog already pulls names from. Native icons are 36×32.
+function itemIconUrl(id: number): string {
+  return `https://static.runelite.net/cache/item/icon/${id}.png`;
+}
+
+function ItemIcon({ id }: { id: number }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <span className="item-icon" aria-hidden="true">
+      {!broken && (
+        <img
+          src={itemIconUrl(id)}
+          alt=""
+          width={36}
+          height={32}
+          loading="lazy"
+          decoding="async"
+          onError={() => setBroken(true)}
+        />
+      )}
+    </span>
+  );
+}
+
 const TABS = [
   { key: "bank", label: "Bank" },
   { key: "equipment", label: "Equipped" },
@@ -85,7 +110,12 @@ export default function BankTable({
             <tbody>
               {filtered.map((r) => (
                 <tr key={r.id}>
-                  <td>{r.name}</td>
+                  <td>
+                    <span className="item-cell">
+                      <ItemIcon id={r.id} />
+                      <span>{r.name}</span>
+                    </span>
+                  </td>
                   <td className="num">{r.qty.toLocaleString("en-US")}</td>
                   <td className="num">{r.unitPrice ? gp(r.unitPrice) : "—"}</td>
                   <td className="num" style={{ fontWeight: 600 }}>
