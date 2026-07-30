@@ -5,15 +5,32 @@
 // Gemini 3 models attach thoughtSignature fields to response parts during
 // function calling and require them back verbatim on later turns, so the
 // tool loop pushes each model turn into the conversation unmodified.
+//
+// Two tiers, mirroring the Anthropic side (Opus for the authenticated chat,
+// Haiku for guest chat and structured-output calls):
+//   3.5 Flash      — the tool-using Sidekick chat, where reasoning depth pays.
+//   3.5 Flash-Lite — guest chat plus the high-volume JSON calls (starter
+//                    suggestions, followups, goal proposals, speech clips).
+//
+// Note: temperature / topP / topK are deprecated on Gemini 3.x and the API
+// errors on them in newer generations — never send them.
 
 // `||` not `??`: .env templates leave these as empty strings.
 export const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.5-flash";
+export const GEMINI_LITE_MODEL = process.env.GEMINI_LITE_MODEL || "gemini-3.5-flash-lite";
 
-// Thinking is on by default and slow; "low" keeps chat turns snappy. The
-// sidekick tool loop makes several sequential calls per turn, so per-call
-// latency compounds — see REQUEST_TIMEOUT_MS / deadlineMs below.
+// 3.5 accepts "minimal" | "low" | "medium" | "high"; both models default to
+// more thinking than we want here. The sidekick tool loop makes several
+// sequential calls per turn, so per-call latency compounds — "low" keeps chat
+// turns snappy (see REQUEST_TIMEOUT_MS / deadlineMs below). Schema-shaped
+// extraction on the lite tier needs less than that.
 const THINKING_LEVEL = process.env.GEMINI_THINKING_LEVEL || "low";
+const LITE_THINKING_LEVEL = process.env.GEMINI_LITE_THINKING_LEVEL || "minimal";
 const REQUEST_TIMEOUT_MS = 45_000;
+
+function thinkingLevelFor(model: string): string {
+  return model === GEMINI_LITE_MODEL ? LITE_THINKING_LEVEL : THINKING_LEVEL;
+}
 
 export function geminiEnabled(): boolean {
   return !!process.env.GEMINI_API_KEY;
@@ -37,9 +54,12 @@ type GeminiPart = {
 
 type GeminiContent = { role: "user" | "model"; parts: GeminiPart[] };
 
-async function generateContent(body: Record<string, unknown>): Promise<GeminiContent | null> {
+async function generateContent(
+  model: string,
+  body: Record<string, unknown>,
+): Promise<GeminiContent | null> {
   const call = async (payload: Record<string, unknown>) =>
-    fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
+    fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -57,14 +77,14 @@ async function generateContent(body: Record<string, unknown>): Promise<GeminiCon
     const config = body.generationConfig as Record<string, unknown> | undefined;
     if (/thinking/i.test(text) && config?.thinkingConfig) {
       const { thinkingConfig: _dropped, ...rest } = config;
-      console.warn("Gemini rejected thinkingConfig, retrying without it");
+      console.warn(`Gemini (${model}) rejected thinkingConfig, retrying without it`);
       res = await call({ ...body, generationConfig: rest });
     } else {
-      throw new Error(`Gemini API 400: ${text.slice(0, 500)}`);
+      throw new Error(`Gemini API 400 (${model}): ${text.slice(0, 500)}`);
     }
   }
   if (!res.ok) {
-    throw new Error(`Gemini API ${res.status}: ${(await res.text()).slice(0, 500)}`);
+    throw new Error(`Gemini API ${res.status} (${model}): ${(await res.text()).slice(0, 500)}`);
   }
   const data = (await res.json()) as { candidates?: { content?: GeminiContent }[] };
   return data.candidates?.[0]?.content ?? null;
@@ -81,6 +101,9 @@ function textOf(content: GeminiContent | null): string {
 /**
  * Chat turn with an optional client-side tool loop. Returns the final text
  * ("" if the model produced none — callers supply their own fallback).
+ *
+ * Defaults to the 3.5 Flash tier; pass `model: GEMINI_LITE_MODEL` for cheap,
+ * tool-less turns such as guest chat.
  */
 export async function runGeminiChat(opts: {
   system: string;
@@ -90,7 +113,10 @@ export async function runGeminiChat(opts: {
   maxIterations?: number;
   /** Overall turn budget; the tool loop stops starting new calls near it. */
   deadlineMs?: number;
+  model?: string;
 }): Promise<string> {
+  const model = opts.model ?? GEMINI_MODEL;
+  const thinkingLevel = thinkingLevelFor(model);
   const startedAt = Date.now();
   const deadlineMs = opts.deadlineMs ?? 90_000;
   const contents: GeminiContent[] = opts.history.map((m) => ({
@@ -115,13 +141,13 @@ export async function runGeminiChat(opts: {
       console.warn(`Gemini tool loop hit the ${deadlineMs}ms turn deadline after ${i} calls`);
       break;
     }
-    const content = await generateContent({
+    const content = await generateContent(model, {
       systemInstruction: { parts: [{ text: opts.system }] },
       contents,
       ...(declarations.length > 0 ? { tools: [{ functionDeclarations: declarations }] } : {}),
       generationConfig: {
         maxOutputTokens: opts.maxTokens ?? 4096,
-        thinkingConfig: { thinkingLevel: THINKING_LEVEL },
+        thinkingConfig: { thinkingLevel },
       },
     });
     if (!content?.parts?.length) return textOf(content);
@@ -150,24 +176,27 @@ export async function runGeminiChat(opts: {
 }
 
 /**
- * Single-shot structured output against a standard JSON schema. Token
- * budgets must leave headroom: maxOutputTokens includes the model's
- * (default-on) thinking tokens, and running out truncates to prose.
+ * Single-shot structured output against a standard JSON schema, on the cheap
+ * 3.5 Flash-Lite tier. Token budgets must still leave headroom:
+ * maxOutputTokens includes thinking tokens, and running out truncates the
+ * response to prose that won't parse.
  */
 export async function runGeminiJson<T>(opts: {
   system: string;
   prompt: string;
   schema: Record<string, unknown>;
   maxTokens?: number;
+  model?: string;
 }): Promise<T> {
-  const content = await generateContent({
+  const model = opts.model ?? GEMINI_LITE_MODEL;
+  const content = await generateContent(model, {
     systemInstruction: { parts: [{ text: opts.system }] },
     contents: [{ role: "user", parts: [{ text: opts.prompt }] }],
     generationConfig: {
       maxOutputTokens: opts.maxTokens ?? 2048,
       responseMimeType: "application/json",
       responseJsonSchema: opts.schema,
-      thinkingConfig: { thinkingLevel: THINKING_LEVEL },
+      thinkingConfig: { thinkingLevel: thinkingLevelFor(model) },
     },
   });
   return JSON.parse(textOf(content)) as T;

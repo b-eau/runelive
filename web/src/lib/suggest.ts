@@ -54,7 +54,10 @@ const CONTEXT_FOCUS: Record<SuggestContext, string> = {
   achievements: "Focus on completion progress: the next achievement diary tier within reach, combat achievement tiers to push for, and notable collection log slots to chase. Never propose a diary tier or CA tier the context shows is already complete.",
 };
 
-/** Shared structured-output LLM call (Anthropic or Gemini). null on failure. */
+/**
+ * Shared structured-output LLM call on the cheap tier of whichever provider
+ * is configured (Haiku, or 3.5 Flash-Lite). null on failure.
+ */
 async function llmJson<T>(
   system: string,
   prompt: string,
@@ -142,8 +145,8 @@ export async function generateGoals(context: string): Promise<ProposedGoal[]> {
     GOAL_SYSTEM,
     `Player context:\n${context}\n\nPropose exactly 3 account goals.`,
     GOAL_SCHEMA,
-    // Generous budget: Gemini's default-on thinking shares this with the
-    // output, so a tight cap truncates the JSON to nothing.
+    // Generous budget: on Gemini this cap covers thinking tokens as well as
+    // the output, so a tight one truncates the JSON to nothing.
     2048,
   );
   return sanitizeGoals(parsed?.goals);
