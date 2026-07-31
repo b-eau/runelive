@@ -10,6 +10,7 @@ import type { Goal } from "@prisma/client";
 import { useCallback, useState } from "react";
 import { addGoal, deleteGoal, setGoalStatus, updateGoal } from "./actions";
 import GoalProposals from "./GoalProposals";
+import GoalRecommendations from "./GoalRecommendations";
 
 export default function GoalsPanel({ profileId, goals: initialGoals }: { profileId: string; goals: Goal[] }) {
   const [goals, setGoals] = useState<Goal[]>(initialGoals);
@@ -185,6 +186,12 @@ export default function GoalsPanel({ profileId, goals: initialGoals }: { profile
         ))}
       </div>
       <GoalProposals profileId={profileId} show={active.length < 2} onAdd={(title, notes) => add(title, notes)} />
+
+      <GoalRecommendations
+        profileId={profileId}
+        existingTitles={active.map((g) => g.title)}
+        onAdd={(title, notes) => add(title, notes)}
+      />
 
       <form
         onSubmit={(e) => {
