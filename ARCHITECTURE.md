@@ -104,6 +104,12 @@ same chat endpoint → speechSynthesis TTS), which keeps the realtime loop
 vendor-free; the context + tools make it "aware of key context upfront with
 tools available to query other information."
 
+Gemini is a drop-in alternative backend (`src/lib/gemini.ts`, used when only
+`GEMINI_API_KEY` is set) and mirrors the same two-tier split: 3.5 Flash runs
+the tool loop, 3.5 Flash-Lite runs guest chat and the high-volume
+structured-output calls (starter suggestions, goal proposals, speech clips) —
+the same roles Opus and Haiku play on the Anthropic path.
+
 ### Agent tooling roadmap
 
 The tool loop now also carries planner-grade tools: `calc_skill_target`

@@ -5,13 +5,14 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { GuestSnapshot } from "./lookup";
-import { runGeminiChat, runGeminiJson } from "./gemini";
+import { GEMINI_LITE_MODEL, runGeminiChat, runGeminiJson } from "./gemini";
 import { anthropicEnabled, llmEnabled } from "./sidekick";
 import { generateGoals, type ProposedGoal } from "./suggest";
 import { formatXp, titleCase, xpForLevel } from "./osrs";
 
 // Deliberately the cheap tier: guest traffic is unauthenticated and the
 // task (short suggestions, hiscores Q&A) doesn't need frontier reasoning.
+// GEMINI_LITE_MODEL (3.5 Flash-Lite) is the equivalent on the Gemini side.
 export const GUEST_MODEL = "claude-haiku-4-5";
 
 const MAX_HISTORY_MESSAGES = 12;
@@ -239,6 +240,7 @@ export async function runGuestChat(snapshot: GuestSnapshot, history: GuestMessag
     const text = await runGeminiChat({
       system: guestSystemPrompt(snapshot),
       history: messages,
+      model: GEMINI_LITE_MODEL,
     });
     return text || "Hmm, I came up empty — try rephrasing that.";
   }
