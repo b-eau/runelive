@@ -914,6 +914,27 @@ select:focus-visible {
   overflow-x: auto;
 }
 
+/* Item rows: inventory icon + name. The icon box holds its space so names
+   stay aligned even when an icon is missing (hidden on load error). */
+.item-cell {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.item-ico {
+  flex: none;
+  width: 32px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+}
+
+.item-ico img {
+  max-width: 100%;
+  max-height: 100%;
+}
+
 /* ------------------------------------------------------------- skeletons
    Loading placeholders that mirror the final layout, so route changes are
    instant and content settles without shifting. */

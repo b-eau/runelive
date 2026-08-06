@@ -85,7 +85,26 @@ export default function BankTable({
             <tbody>
               {filtered.map((r) => (
                 <tr key={r.id}>
-                  <td>{r.name}</td>
+                  <td>
+                    <span className="item-cell">
+                      <span className="item-ico">
+                        {/* Inventory icons from RuneLite's public item cache,
+                            keyed by OSRS item id. Lazy — banks run large. */}
+                        <img
+                          src={`https://static.runelite.net/cache/item/icon/${r.id}.png`}
+                          alt=""
+                          aria-hidden
+                          loading="lazy"
+                          decoding="async"
+                          draggable={false}
+                          onError={(e) => {
+                            e.currentTarget.style.visibility = "hidden";
+                          }}
+                        />
+                      </span>
+                      {r.name}
+                    </span>
+                  </td>
                   <td className="num">{r.qty.toLocaleString("en-US")}</td>
                   <td className="num">{r.unitPrice ? gp(r.unitPrice) : "—"}</td>
                   <td className="num" style={{ fontWeight: 600 }}>
